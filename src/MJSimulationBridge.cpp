@@ -61,8 +61,8 @@ void SimulationBridge::UpdateSystemObserver()
 
     //////  Joint positions and velocities
     for (int i = 0; i < num_act_joint; ++i) {
-        robot_.fbk.jpos(i) = mjData_->qpos[i + 7];
-        robot_.fbk.jvel(i) = mjData_->qvel[i + 6];
+        robot_.fbk.jpos(i) = mjData_->qpos[jnt_mapping_idx[i] + 7];
+        robot_.fbk.jvel(i) = mjData_->qvel[jnt_mapping_idx[i] + 6];
     }
 
     //////  Generalized coordinates
@@ -88,8 +88,11 @@ void SimulationBridge::UpdateControlCommand()
     state_machine_.runState();
 
     for (int i = 0; i < num_act_joint; ++i) {
-        mjData_->ctrl[i] = robot_.ctrl.torq_d(i);
+        mjData_->ctrl[jnt_mapping_idx[i]] = robot_.ctrl.torq_d(i);
     }
+    // passive toe wheel joint
+    mjData_->ctrl[13] = 0.0;
+    mjData_->ctrl[19] = 0.0;
 }
 
 void SimulationBridge::UpdateSystemVisualInfo()

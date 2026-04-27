@@ -10,7 +10,7 @@
 #include "Interface/MuJoCo/traj_viz_util.hpp"
 #include "Utils/JointTrajectory.h"
 
-using namespace robot_name;
+using namespace mahru;
 
 template <typename T>
 class FSM_JPosCtrlState : public States {

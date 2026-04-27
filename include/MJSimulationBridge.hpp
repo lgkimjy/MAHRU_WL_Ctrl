@@ -12,7 +12,7 @@
 #include "RobotStatesLogger.hpp"
 #include "StateMachine/StateMachineCtrl.hpp"
 
-using namespace robot_name;
+using namespace mahru;
 
 class SimulationBridge: public SimulationInterface{
 public:

@@ -29,11 +29,11 @@ struct RobotFeedback {
     Eigen::VectorXd     jpos;
     Eigen::VectorXd     jvel;
 
-    explicit RobotFeedback(int nv = robot_name::nDoF)
+    explicit RobotFeedback(int nv = mahru::nDoF)
         : qpos(Eigen::VectorXd::Zero(nv + 1)),
           qvel(Eigen::VectorXd::Zero(nv)),
-          jpos(Eigen::VectorXd::Zero(robot_name::num_act_joint)),
-          jvel(Eigen::VectorXd::Zero(robot_name::num_act_joint)) {}
+          jpos(Eigen::VectorXd::Zero(mahru::num_act_joint)),
+          jvel(Eigen::VectorXd::Zero(mahru::num_act_joint)) {}
 };
 
 // --- Commands & actuator outputs: motion targets + torque (not "motor struct" only) ---
@@ -45,10 +45,10 @@ struct RobotCtrl {
     Eigen::VectorXd jvel_d;
     Eigen::VectorXd torq_d;
 
-    explicit RobotCtrl(int = robot_name::nDoF)
-        : jpos_d(Eigen::VectorXd::Zero(robot_name::num_act_joint)),
-          jvel_d(Eigen::VectorXd::Zero(robot_name::num_act_joint)),
-          torq_d(Eigen::VectorXd::Zero(robot_name::num_act_joint)) {}
+    explicit RobotCtrl(int = mahru::nDoF)
+        : jpos_d(Eigen::VectorXd::Zero(mahru::num_act_joint)),
+          jvel_d(Eigen::VectorXd::Zero(mahru::num_act_joint)),
+          torq_d(Eigen::VectorXd::Zero(mahru::num_act_joint)) {}
 };
 
 // --- Parameters from config (PD, nominal posture); joint order = RobotDefinition::kJointNames / joint_names ---
@@ -56,9 +56,9 @@ struct RobotParam {
     Eigen::VectorXd Kp;
     Eigen::VectorXd Kd;
 
-    explicit RobotParam(int = robot_name::nDoF)
-        : Kp(Eigen::VectorXd::Zero(robot_name::num_act_joint)),
-          Kd(Eigen::VectorXd::Zero(robot_name::num_act_joint)) {}
+    explicit RobotParam(int = mahru::nDoF)
+        : Kp(Eigen::VectorXd::Zero(mahru::num_act_joint)),
+          Kd(Eigen::VectorXd::Zero(mahru::num_act_joint)) {}
 };
 
 struct RobotData {
@@ -69,5 +69,5 @@ struct RobotData {
     // n_q : number of generalized coordinates)
     // n_v : number of generalized velocities
     // n_j : number of joints
-    explicit RobotData(int nv = robot_name::nDoF) : fbk(nv), ctrl(nv), param(nv) {}
+    explicit RobotData(int nv = mahru::nDoF) : fbk(nv), ctrl(nv), param(nv) {}
 };

@@ -40,6 +40,8 @@
 # debug information files
 *.dwo
 
-3rd-parties/*
+3rd-parties
 __pycache__/
 .DS_Store
+*h5
+build/

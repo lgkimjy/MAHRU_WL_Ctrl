@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(mujoco_template LANGUAGES C CXX)
+project(mahru_ctrl LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,7 +34,7 @@ file(GLOB FSM_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/include/StateMachine/FSM_*.cpp"
 )
 
-add_executable(mujoco_template
+add_executable(mahru_ctrl
   src/main.cpp
   src/MJSimulationBridge.cpp
   include/StateMachine/StateMachineCtrl.cpp
@@ -43,14 +43,14 @@ add_executable(mujoco_template
   ${FSM_SOURCES}
 )
 
-target_include_directories(mujoco_template PRIVATE
+target_include_directories(mahru_ctrl PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
   "${TEMPLATE_MUJOCO_SOURCE_DIR}/simulate"
   "${TEMPLATE_MUJOCO_SOURCE_DIR}/sample"
   ${HDF5_INCLUDE_DIRS}
 )
 
-target_link_libraries(mujoco_template PRIVATE
+target_link_libraries(mahru_ctrl PRIVATE
   Eigen3::Eigen
   yaml-cpp::yaml-cpp
   mujoco::libsimulate
@@ -62,9 +62,9 @@ target_link_libraries(mujoco_template PRIVATE
 )
 
 if(DEFINED MUJOCO_SIMULATE_COMPILE_OPTIONS)
-  target_compile_options(mujoco_template PUBLIC ${MUJOCO_SIMULATE_COMPILE_OPTIONS})
+  target_compile_options(mahru_ctrl PUBLIC ${MUJOCO_SIMULATE_COMPILE_OPTIONS})
 endif()
 
-set_target_properties(mujoco_template PROPERTIES
+set_target_properties(mahru_ctrl PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )

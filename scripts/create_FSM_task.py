@@ -78,7 +78,7 @@ def main() -> None:
 
 #include "Interface/MuJoCo/traj_viz_util.hpp"
 
-using namespace robot_name;
+using namespace mahru;
 
 template <typename T>
 class {class_name} : public States {{
