@@ -1,0 +1,44 @@
+\documentclass[letterpaper,10pt]{article}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage[margin=0.75in]{geometry}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\posv}{\bm{p}}
+\newcommand{\velv}{\bm{v}}
+\newcommand{\accv}{\bm{a}}
+\newcommand{\linmom}{\bm{\ell}}
+\newcommand{\angmom}{\bm{h}}
+\newcommand{\omegav}{\bm{\omega}}
+
+\title{\LARGE \bf
+Unicycle-Pendulum and Dual-Flywheel Reference Generation for Single-Stance WLH Balance Control
+}
+
+\author{Junyoung Kim}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note describes a reference generator for a wheeled-legged humanoid that maintains a single rolling contact and is controlled through a unicycle-pendulum model with two reaction flywheels. Given twist command using PD control law, from \((0,0,0)\) to \((1,1,\pi/2)\) into references for the wheel support point, center of mass (CoM), centroidal linear momentum, centroidal angular momentum, wheel speed, and roll/yaw flywheel speeds. The resulting trajectory is intended to be used as \(\mathbf{X}^{\mathrm{ref}}\) for a centroidal MPC or as motion/momentum references for a whole-body controller.
+\end{abstract}
+
+\section{Modeling Idea}
+The target behavior is a single-contact wheeled-legged humanoid motion. The support contact is treated as a rolling unicycle contact, while the upper body behaves like a pendulum above that contact. The drive wheel controls forward and backward progression. Two flywheels are used as angular-momentum actuators: one mainly regulates roll momentum and the other regulates yaw momentum. Pitch is represented as a body lean reference caused by longitudinal acceleration, although an additional pitch-axis flywheel could be added with the same construction.
+
+Let the planar unicycle state be
+\begin{equation}
+\bm{x}_u =
+\begin{bmatrix}
+x_w & y_w & \psi & v
+\end{bmatrix}^{\top},
+\end{equation}
+where \((x_w,y_w)\) is the virtual wheel-contact point and \(\psi\) is the yaw angle. 
+
+\end{document}
