@@ -1,0 +1,23 @@
+<mujoco model="template_scene">
+  <option timestep="0.001" gravity="0 0 -9.81"/>
+
+  <visual>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512"
+             rgb1=".1 .2 .3" rgb2=".2 .3 .4"/>
+    <material name="grid" texture="grid" texrepeat="1 1" texuniform="true"
+              reflectance=".2"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 3"/>
+    <geom name="floor" type="plane" size="5 5 .1" material="grid"/>
+    <body name="template_base" pos="0 0 0.5">
+      <freejoint name="floating_base"/>
+      <geom name="template_body" type="box" size="0.1 0.08 0.05" rgba="0.2 0.6 0.8 1"/>
+    </body>
+  </worldbody>
+</mujoco>
