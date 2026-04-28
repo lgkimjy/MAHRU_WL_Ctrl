@@ -112,6 +112,7 @@ enum {
   // right ui
   SECT_JOINT = 0,
   SECT_CONTROL,
+  SECT_CMD,
   NSECT1
 };
 
@@ -1578,6 +1579,26 @@ void UiEvent(mjuiState* state) {
       }
     }
 
+    /////////////////////////////////////////////////////////////////////
+    ////////////////////////////// JY CODE ////////////////////////////// 
+    ////// clear command data when clear button is pressed
+    ////// but you have to update ui section to see the change -> it is down there (already added)
+    if (it && it->sectionid==SECT_CMD) {
+      // clear controls
+      if (it->itemid == 0) {
+        sim->lin_vel_d.setZero();
+        sim->ang_vel_d.setZero();
+      }
+      else if (it->itemid == 14) {
+        sim->lin_vel_d(0) += 0.01;
+      }
+      else if (it->itemid == 15) {
+        sim->lin_vel_d(0) -= 0.01;
+      }
+    }
+    ////////////////////////////// JY CODE ////////////////////////////// 
+    /////////////////////////////////////////////////////////////////////
+
     // stop if UI processed event
     if (it!=nullptr || (state->type==mjEVENT_KEY && state->key==0)) {
       return;
@@ -2513,6 +2534,15 @@ void Simulate::Render() {
     }
     pending_.ui_update_ctrl = false;
   }
+
+  /////////////////////////////////////////////////////////////////////
+  ////////////////////////////// JY CODE ////////////////////////////// 
+  ////// clear command section in visual ui update
+  if (this->ui1_enable && this->ui1.sect[SECT_CMD].state) {
+      mjui_update(SECT_CMD, -1, &this->ui1, &this->uistate, &this->platform_ui->mjr_context());
+  }
+  ////////////////////////////// JY CODE ////////////////////////////// 
+  /////////////////////////////////////////////////////////////////////
 
   // render scene
   mjr_render(rect, &this->scn, &this->platform_ui->mjr_context());

@@ -27,9 +27,9 @@ SimulationInterface::SimulationInterface(const std::string& scene_file):
     auto platform_ui = std::make_unique<mj::GlfwAdapter>();
 
     // uncomment this line, if wanted to change the spawn window size
-    // if (GLFWwindow* window = glfwGetCurrentContext()) {
-    //     glfwSetWindowSize(window, 4000, 2000);  // window size
-    // }
+    if (GLFWwindow* window = glfwGetCurrentContext()) {
+        glfwSetWindowSize(window, 4000, 3000);  // window size
+    }
     
     mjSim_ = new mj::Simulate(
         std::move(platform_ui),
