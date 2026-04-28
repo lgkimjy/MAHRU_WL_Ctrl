@@ -32,8 +32,14 @@ private:
     mujoco::TrajVizUtil* viz_ = nullptr;
 
     Eigen::Matrix<T, num_act_joint, 1>      jpos_0_;
-
     
+    void computeWeightedWBC();
+
+    void updateModel();
+    void updateCommand();
+    void updateVisualization();
+    void readConfig(std::string config_file);
+
     //////////////// ARBML ////////////////
 	/////	Motion parameters for body frame : NOT NECESSARY !!!!
 	///////////////////////////////////////////////////////////////////////////
@@ -68,13 +74,8 @@ private:
     void initEEParameters(const mjModel* model);
     void computeLinkKinematics();
     void computeEEKinematics(Eigen::Matrix<double, mahru::nDoF, 1>& xidot);
+    void computeContactKinematics();
     //////////////// ARBML ////////////////
-
-
-    void updateModel();
-    void updateCommand();
-    void updateVisualization();
-    void readConfig(std::string config_file);
 };
 
 #endif // __FSM_BALANCECTRL_HPP__

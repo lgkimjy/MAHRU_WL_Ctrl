@@ -15,10 +15,16 @@ namespace mahru
     constexpr size_t nDoF_base = 6;
     constexpr size_t nDoFQuat_base = 7;
 
+    constexpr size_t num_leg = 2;
+    constexpr size_t num_arm = 2;
+
     constexpr size_t num_leg_joint = 5;
     constexpr size_t num_arm_joint = 4;
     constexpr size_t num_waist_joint = 1;
-    constexpr size_t num_act_joint = 2 * num_leg_joint + 2 * num_arm_joint + num_waist_joint;
+
+    constexpr size_t num_act_joint = num_leg * num_leg_joint \
+                                    + num_arm * num_arm_joint 
+                                    + num_waist_joint;
 
     constexpr size_t nDoF = num_act_joint + nDoF_base;
     constexpr size_t nDoFQuat = num_act_joint + nDoFQuat_base;
@@ -28,7 +34,11 @@ namespace mahru
     constexpr std::array<int, num_act_joint> robot_joint_idx = {};
 
     constexpr std::array<int, num_act_joint> jnt_mapping_idx = {
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 20
+        0, 
+        1, 2, 3, 4, 
+        5, 6, 7, 8, 
+        9, 10, 11, 12, 14, 
+        15, 16, 17, 18, 20
     };
 
     inline constexpr std::string_view scene = "/model/scene.xml";

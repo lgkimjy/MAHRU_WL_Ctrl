@@ -55,6 +55,21 @@ public:
         setMarker(name, marker);
     }
 
+    void cylinder(const std::string& name,
+                  const Eigen::Vector3d& pos,
+                  double radius,
+                  double height,
+                  const Color& color)
+    {
+        Marker marker;
+        marker.kind = MarkerKind::Cylinder;
+        marker.points = {pos};
+        marker.size = radius;
+        marker.axis_length = height;
+        marker.color = color;
+        setMarker(name, marker);
+    }
+
     void label(const std::string& name,
                const Eigen::Vector3d& pos,
                const std::string& text,
@@ -193,6 +208,9 @@ public:
             case MarkerKind::Sphere:
                 drawSphere(marker, scn);
                 break;
+            case MarkerKind::Cylinder:
+                drawCylinder(marker, scn);
+                break;
             case MarkerKind::Label:
                 drawLabel(marker, scn);
                 break;
@@ -215,6 +233,7 @@ public:
 private:
     enum class MarkerKind {
         Sphere,
+        Cylinder,
         Label,
         Frame,
         Line,
@@ -294,6 +313,24 @@ private:
 
         mjvGeom* geom = scn.geoms + scn.ngeom++;
         mjv_initGeom(geom, mjGEOM_SPHERE, size, pos, nullptr, color);
+    }
+
+    void drawCylinder(const Marker& marker, mjvScene& scn)
+    {
+        if (marker.points.empty() || !canAddGeom(scn)) return;
+
+        const Eigen::Vector3d center = marker.points.front();
+        const Eigen::Vector3d half_height(0.0, 0.0, 0.5 * marker.axis_length);
+
+        mjtNum from[3];
+        mjtNum to[3];
+        copyPos(from, center - half_height);
+        copyPos(to, center + half_height);
+
+        mjvGeom* geom = scn.geoms + scn.ngeom++;
+        mjv_initGeom(geom, mjGEOM_CYLINDER, nullptr, nullptr, nullptr, nullptr);
+        mjv_connector(geom, mjGEOM_CYLINDER, marker.size, from, to);
+        copyColor(geom->rgba, marker.color);
     }
 
     void drawLabel(const Marker& marker, mjvScene& scn)

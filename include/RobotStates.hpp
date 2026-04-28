@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <Eigen/Dense>
 #include <vector>
 #include <string>
@@ -24,6 +25,19 @@ struct RobotFeedback {
     // Position of CoM
     Eigen::Vector3d     p_CoM = Eigen::Vector3d::Zero();
     Eigen::Vector3d     pdot_CoM = Eigen::Vector3d::Zero();
+
+    Eigen::Vector2d    p_ZMP = Eigen::Vector2d::Zero();
+    Eigen::Vector2d    p_DCM = Eigen::Vector2d::Zero();
+
+    std::array<Eigen::Vector3d, 4>                          p_C{};          // Contact Position w.r.t {I}
+    std::array<Eigen::Vector3d, 4>                          pdot_C{};       // Contact Velocity w.r.t {I}
+    std::array<Eigen::Matrix3d, 4>                          R_C{};          // Contact orientation w.r.t {I}
+    std::array<Eigen::Matrix<double, 3, mahru::nDoF>, 4>    Jp_C{};         // Contact linear Jacobian
+    std::array<Eigen::Matrix<double, 3, mahru::nDoF>, 4>    Jdotp_C{};      // Time derivative of contact linear Jacobian
+    std::array<Eigen::Matrix<double, 3, mahru::nDoF>, 4>    Jr_C{};         // Contact angular Jacobian
+    std::array<Eigen::Matrix<double, 3, mahru::nDoF>, 4>    Jdotr_C{};      // Time derivative of contact angular Jacobian
+    std::array<Eigen::Matrix<double, 3, mahru::nDoF>, 4>    Jp_C_prev{};    // Contact Position
+    std::array<Eigen::Matrix<double, 3, mahru::nDoF>, 4>    Jr_C_prev{};    // Contact Position
 
     // Joint States
     Eigen::VectorXd     jpos;

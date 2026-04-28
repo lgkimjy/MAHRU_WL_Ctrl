@@ -40,6 +40,7 @@ template <typename T>
 void FSM_BalanceCtrlState<T>::runNominal()
 {
     updateModel();
+    computeWeightedWBC();
     updateCommand();
     updateVisualization();
 
@@ -47,9 +48,9 @@ void FSM_BalanceCtrlState<T>::runNominal()
 }
 
 template <typename T>
-void FSM_BalanceCtrlState<T>::setVisualizer(mujoco::TrajVizUtil* visualizer)
+void FSM_BalanceCtrlState<T>::computeWeightedWBC()
 {
-    viz_ = visualizer;
+
 }
 
 template <typename T>
@@ -90,6 +91,8 @@ void FSM_BalanceCtrlState<T>::updateModel()
     computeLinkKinematics();
     /////	Compute End-effector Kinematics : "computeMotionCore()" is followed by "computeEEKinematics()"
     computeEEKinematics(arbml_->xidot);
+    /////	Compute Contact Kinematics
+    computeContactKinematics();
 }
 
 template <typename T>
@@ -208,6 +211,73 @@ void FSM_BalanceCtrlState<T>::computeEEKinematics(Eigen::Matrix<double, mahru::n
 }
 
 template <typename T>
+void FSM_BalanceCtrlState<T>::computeContactKinematics()
+{
+	double radius_wheel = 0.075;
+	double radius_Torus_sphere = 0;
+	
+	double radius_toe = 0.019;
+	double radius_Torus_sphere_toe = 0;
+
+	Eigen::Vector3d     normal_vec[num_leg];
+	Eigen::Vector3d     wheel_sagittal_vec[num_leg];
+	Eigen::Vector3d     wheel_tangent_vec[num_leg];
+	Eigen::Vector3d     z_wheel_vec[num_leg];
+	Eigen::Vector3d     wheel_d_k_vec[num_leg];
+    
+	normal_vec[0] = {0.0, 0.0, 1.0};
+	z_wheel_vec[0] = R_EE[3].block(0, Z_AXIS, 3, 1);
+	wheel_tangent_vec[0] = normalize(z_wheel_vec[0].cross(normal_vec[0]));
+	wheel_sagittal_vec[0] = normalize(normal_vec[0].cross(wheel_tangent_vec[0]));
+	wheel_d_k_vec[0] = normalize(wheel_tangent_vec[0].cross(z_wheel_vec[0]));
+
+	normal_vec[1] = {0.0, 0.0, 1.0};
+	z_wheel_vec[1] = R_EE[5].block(0, Z_AXIS, 3, 1);
+	wheel_tangent_vec[1] = normalize(z_wheel_vec[1].cross(normal_vec[1]));
+	wheel_sagittal_vec[1] = normalize(normal_vec[1].cross(wheel_tangent_vec[1]));
+	wheel_d_k_vec[1] = normalize(wheel_tangent_vec[1].cross(z_wheel_vec[1]));
+
+    robot_data_->fbk.p_C[0] = p_EE[2] - radius_toe * wheel_d_k_vec[0] - radius_Torus_sphere_toe * normal_vec[0]; // toe end-effector right
+    robot_data_->fbk.R_C[0].block(0, X_AXIS, 3, 1) = wheel_tangent_vec[0];
+    robot_data_->fbk.R_C[0].block(0, Y_AXIS, 3, 1) = wheel_sagittal_vec[0];
+    robot_data_->fbk.R_C[0].block(0, Z_AXIS, 3, 1) = normal_vec[0];
+
+    robot_data_->fbk.p_C[1] = p_EE[4] - radius_toe * wheel_d_k_vec[1] - radius_Torus_sphere_toe * normal_vec[1]; // toe end-effector left
+    robot_data_->fbk.R_C[1].block(0, X_AXIS, 3, 1) = wheel_tangent_vec[1];
+    robot_data_->fbk.R_C[1].block(0, Y_AXIS, 3, 1) = wheel_sagittal_vec[1];
+    robot_data_->fbk.R_C[1].block(0, Z_AXIS, 3, 1) = normal_vec[1];
+
+    robot_data_->fbk.p_C[2] = p_EE[3] - radius_wheel * wheel_d_k_vec[0] - radius_Torus_sphere * normal_vec[0]; // wheel end-effector right
+    robot_data_->fbk.R_C[2].block(0, X_AXIS, 3, 1) = wheel_tangent_vec[0];
+    robot_data_->fbk.R_C[2].block(0, Y_AXIS, 3, 1) = wheel_sagittal_vec[0];
+    robot_data_->fbk.R_C[2].block(0, Z_AXIS, 3, 1) = normal_vec[0];
+
+    robot_data_->fbk.p_C[3] = p_EE[5] - radius_wheel * wheel_d_k_vec[1] - radius_Torus_sphere * normal_vec[1]; // wheel end-effector left
+    robot_data_->fbk.R_C[3].block(0, X_AXIS, 3, 1) = wheel_tangent_vec[1];
+    robot_data_->fbk.R_C[3].block(0, Y_AXIS, 3, 1) = wheel_sagittal_vec[1];
+    robot_data_->fbk.R_C[3].block(0, Z_AXIS, 3, 1) = normal_vec[1];
+
+    for(int i=0; i<4; i++) {
+        arbml_->getBodyJacob(id_body_EE[i+2], robot_data_->fbk.p_C[i], robot_data_->fbk.Jp_C[i], robot_data_->fbk.Jr_C[i]);
+        arbml_->getBodyJacobDeriv(id_body_EE[i+2], robot_data_->fbk.Jdotp_C[i], robot_data_->fbk.Jdotr_C[i]);
+    }
+
+    robot_data_->fbk.pdot_C[0] = robot_data_->fbk.Jp_C[0] * arbml_->xidot;
+    robot_data_->fbk.pdot_C[1] = robot_data_->fbk.Jp_C[1] * arbml_->xidot;
+    robot_data_->fbk.pdot_C[2] = robot_data_->fbk.Jp_C[2] * arbml_->xidot;
+    robot_data_->fbk.pdot_C[3] = robot_data_->fbk.Jp_C[3] * arbml_->xidot;
+
+	// for( int i=0; i< no_of_EE; i++)
+	// {
+	// 	Jdotp_C_numeric[i] = (Jp_C[i] - Jp_C_prev[i])/robot.getSamplingTime();
+	// 	Jp_C_prev[i] = Jp_C[i];
+	// 	Jdotr_C_numeric[i] = (Jr_C[i] - Jr_C_prev[i])/robot.getSamplingTime();
+	// 	Jr_C_prev[i] = Jr_C[i];
+	// }
+	// Jdotp_C = Jdotp_C_numeric;
+}
+
+template <typename T>
 void FSM_BalanceCtrlState<T>::updateVisualization()
 {
     if (!viz_) return;
@@ -217,12 +287,36 @@ void FSM_BalanceCtrlState<T>::updateVisualization()
         0.035, {0.3f, 0.0f, 0.3f, 0.8f}
     );
     
-    for(int i = 0; i < id_body_EE.size(); i++) {
-        viz_->sphere("BalanceCtrl/EE" + std::to_string(i),
-            p_EE[i],
-            0.02, {0.0f, 0.3f, 0.3f, 0.8f}
-        );
-    }
+    viz_->sphere("BalanceCtrl/CoM", arbml_->p_CoM,
+        0.035, {1.0f, 0.0f, 0.0f, 0.5f}
+    );
+
+    Eigen::Vector3d zmp_pos = arbml_->pos_ZMP;
+    zmp_pos.z() = 0.0;
+    viz_->cylinder("BalanceCtrl/ZMP", zmp_pos,
+        0.03, 0.01, {1.0f, 0.9f, 0.0f, 0.8f}
+    );
+    viz_->label("BalanceCtrl/ZMP_label", zmp_pos,
+        "ZMP", {1.0f, 0.9f, 0.0f, 1.0f}
+    );
+
+    // for(int i = 0; i < id_body_EE.size(); i++) {
+    //     viz_->sphere("BalanceCtrl/EE" + std::to_string(i) + "_pos",
+    //         p_EE[i], 0.02, {0.0f, 0.3f, 0.3f, 0.8f}
+    //     );
+    // }
+
+    // for(int i = 0; i < 4; i++) {
+    //     viz_->sphere("BalanceCtrl/Contact_" + std::to_string(i) + "_pos",
+    //         robot_data_->fbk.p_C[i], 0.02, {0.0f, 0.3f, 0.3f, 0.8f}
+    //     );
+    // }
+}
+
+template <typename T>
+void FSM_BalanceCtrlState<T>::setVisualizer(mujoco::TrajVizUtil* visualizer)
+{
+    viz_ = visualizer;
 }
 
 template <typename T>
