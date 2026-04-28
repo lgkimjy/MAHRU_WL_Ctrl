@@ -13,6 +13,7 @@ class TrajVizUtil;
 enum StateList {
     PASSIVE = 0,
     FSM_JPosCtrl = 1,
+    FSM_BalanceCtrl,
     NUM_STATE
 };
 

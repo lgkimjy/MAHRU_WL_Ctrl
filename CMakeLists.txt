@@ -34,6 +34,11 @@ file(GLOB FSM_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/include/StateMachine/FSM_*.cpp"
 )
 
+set(ARBML_SRC
+  include/3rd-parties/ARBMLlib/ARBML.cpp
+  include/3rd-parties/ARBMLlib/RigidBody.cpp
+)
+
 add_executable(mahru_ctrl
   src/main.cpp
   src/MJSimulationBridge.cpp
@@ -41,6 +46,7 @@ add_executable(mahru_ctrl
   include/Interface/MuJoCo/SimulationInterface.cpp
   include/Interface/MuJoCo/simulate.cc
   ${FSM_SOURCES}
+  ${ARBML_SRC}
 )
 
 target_include_directories(mahru_ctrl PRIVATE

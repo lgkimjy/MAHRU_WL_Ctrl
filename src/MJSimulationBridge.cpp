@@ -21,14 +21,14 @@ SimulationBridge::SimulationBridge(const std::string& scene_file)
     std::filesystem::create_directories(log_dir);
     logger = std::make_unique<HDF5Logger>(log_dir + log_file_name);
 
-    std::cout << "[SimulationBridge] Constructed" << std::endl;
+    std::cout << "[ SimulationBridge ] Constructed" << std::endl;
 }
 
 void SimulationBridge::Initialize()
 {
     state_machine_.setVisualizer(&mjSim_->traj_viz_util_);
     state_machine_.initialize();
-    std::cout << "[SimulationBridge] Initialized" << std::endl;
+    std::cout << "[ SimulationBridge ] Initialized" << std::endl;
 }
 
 void SimulationBridge::UpdateSystemObserver()
@@ -81,6 +81,8 @@ void SimulationBridge::UpdateSystemObserver()
 
 void SimulationBridge::UpdateUserInput()
 {
+    robot_.ctrl.lin_vel_d = mjSim_->lin_vel_d;
+    robot_.ctrl.ang_vel_d = mjSim_->ang_vel_d;    
 }
 
 void SimulationBridge::UpdateControlCommand()

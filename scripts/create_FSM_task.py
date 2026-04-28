@@ -124,7 +124,8 @@ void {class_name}<T>::onEnter()
     std::cout << "[ {class_name} ] OnEnter" << std::endl;
 
     if (viz_) {{
-        viz_->clearPrefix("{task_name}/");
+        // viz_->clearPrefix("{task_name}/");
+        viz_->clear();
     }}
 
     readConfig(CMAKE_SOURCE_DIR "/config/fsm_{task_name}_config.yaml");

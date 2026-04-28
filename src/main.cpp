@@ -10,7 +10,9 @@ int main(int argc, char **argv)
     if (sim) {
         std::cout << "Simulation mode" << std::endl;
         std::cout << "Using scene: " << mahru::scene << std::endl;
-        SimulationBridge simulationBridge(std::string(CMAKE_SOURCE_DIR) + "/" + std::string(mahru::scene));
+        SimulationBridge simulationBridge(
+            std::string(CMAKE_SOURCE_DIR) + std::string(mahru::scene)
+        );
         simulationBridge.run();
     }
     else {

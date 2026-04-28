@@ -85,9 +85,38 @@
 		<material name="MatLink"  reflectance="0" specular="1" shininess="0.3" rgba="0.5 0.5 0.5 1"/>
 		<material name="MatPlane" texture="texplane" reflectance="0" texrepeat="2 2" texuniform="true"/>
 		<material name="MatWheel" texture="picwheel" emission="0.3" reflectance="0" shininess="0.5"/>
+
+		<texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+		<texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+		  markrgb="0.8 0.8 0.8" width="300" height="300"/>
+		<material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0"/>
+			
+		<!-- <hfield name='hf2' file="noise.png" size="5 5 0.03 0.0001"/> -->
 	</asset>
 	
 	<worldbody>
+		<!-- Light-->
+		<!-- <light directional="true" pos=" 5 -5 5" dir="-0.5  0.5 -1" diffuse="0.3 0.3 0.3" specular="0.0 0.0 0.0" castshadow="false"/>
+		<light directional="true" pos=" 5  5 5" dir="-0.5 -0.5 -1" diffuse="0.3 0.3 0.3" specular="0.0 0.0 0.0" castshadow="false"/>
+		<light directional="true" pos="-5  5 5" dir=" 0.5 -0.5 -1" diffuse="0.3 0.3 0.3" specular="0.0 0.0 0.0" castshadow="false"/>
+		<light directional="true" pos="-5 -5 5" dir=" 0.5  0.5 -1" diffuse="0.3 0.3 0.3" specular="0.0 0.0 0.0" castshadow="false"/> -->
+		<!-- <light name="spotlight" mode="targetbodycom" target="Torso" pos="10 -10 10" diffuse="1.0 1.0 1.0" specular="0.0 0.0 0.0" castshadow="false"/> -->
+		<light directional="true" pos=" 5 -5 5" dir="-0.5  0.5 -1" diffuse="0.3 0.3 0.3" specular="0.0 0.0 0.0" castshadow="false"/>
+		<light directional="true" pos=" 5  5 5" dir="-0.5 -0.5 -1" diffuse="0.3 0.3 0.3" specular="0.0 0.0 0.0" castshadow="false"/>
+		<light directional="true" pos="-5  5 5" dir=" 0.5 -0.5 -1" diffuse="0.3 0.3 0.3" specular="0.0 0.0 0.0" castshadow="false"/>
+		<light directional="true" pos="-5 -5 5" dir=" 0.5  0.5 -1" diffuse="0.3 0.3 0.3" specular="0.0 0.0 0.0" castshadow="false"/>
+		
+		<camera name="TRK_BACK" mode="trackcom" pos="-3.4 0 2.3"  euler = "0  -1.134463778 -1.570796 " fovy = "40"/>
+		<camera name="TRK_RIGHT" mode="trackcom" pos="0 -3.4 2.3" euler = "1.134463778 0 0 " fovy = "40"/>
+		<camera name="TRK_FRONT" mode="trackcom" pos="3.4 0 2.3"  euler = "0   1.134463778  1.570796 " fovy = "40"/>
+		<camera name="TRK_LEFT" mode="trackcom" pos="0 3.4  2.3"  euler = "-1.134463778  0  -3.141592 " fovy = "40"/>
+
+		<!-- <camera name="TGT_TOP" mode="targetbody" target = "torso" pos="-0.45  0 1.5" /> -->
+		<!-- Ground -->
+		<geom name="Ground" type="plane" pos="0 0 0" material="groundplane" size="0 0 1" condim="3"/>
+		<!-- <geom name="Ground" type="plane" pos="0 0 0" material="MatPlane" size="0 0 1" condim="3"/> -->
+		<!-- <geom name='hfield2' pos='6 0 0' hfield='hf2' type='hfield' condim='3' conaffinity='15'/> -->
+
 		<!-- BASE : Pelvis -->
 		<body name="Pelvis" pos="0 0 0.8">
 		<freejoint name ="Floating-Base"/>

@@ -78,10 +78,10 @@ private:
     {
         file_ = H5Fcreate(filename_.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
         if (file_ < 0) {
-            std::cerr << "[HDF5Logger] Failed to create " << filename_ << std::endl;
+            std::cerr << "[ HDF5Logger ] Failed to create " << filename_ << std::endl;
             return;
         }
-        std::cout << "[HDF5Logger] logging to " << filename_ << std::endl;
+        std::cout << "[ HDF5Logger ] logging to " << filename_ << std::endl;
 
         while (true) {
             std::unique_lock<std::mutex> lock(queue_mutex_);

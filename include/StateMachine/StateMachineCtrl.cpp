@@ -1,6 +1,7 @@
 #include "StateMachine/StateMachineCtrl.hpp"
 
 #include "StateMachine/FSM_JPosCtrl.hpp"
+#include "StateMachine/FSM_BalanceCtrl.hpp"
 
 #include <iostream>
 
@@ -8,6 +9,7 @@ StateMachineCtrl::StateMachineCtrl(RobotData& robot)
 {
     state_list_.resize(StateList::NUM_STATE, nullptr);
     state_list_[StateList::FSM_JPosCtrl] = new FSM_JPosCtrlState<double>(robot);
+    state_list_[StateList::FSM_BalanceCtrl] = new FSM_BalanceCtrlState<double>(robot);
 
     current_state_ = nullptr;
     next_state_ = nullptr;
@@ -30,11 +32,18 @@ void StateMachineCtrl::initialize()
 
 void StateMachineCtrl::runState()
 {
+    static int count = 0;
     if (first_run_) {
         current_state_->onEnter();
+        count = 0;
         first_run_ = false;
     }
+    if(count > 3000 && count < 3002) {
+        current_state_ = state_list_[StateList::FSM_BalanceCtrl];
+        current_state_->onEnter();
+    }
     current_state_->runNominal();
+    count ++;
 }
 
 void StateMachineCtrl::setVisualizer(mujoco::TrajVizUtil* visualizer)
