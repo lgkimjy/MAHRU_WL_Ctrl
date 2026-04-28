@@ -47,7 +47,20 @@ struct RobotFeedback {
         : qpos(Eigen::VectorXd::Zero(nv + 1)),
           qvel(Eigen::VectorXd::Zero(nv)),
           jpos(Eigen::VectorXd::Zero(mahru::num_act_joint)),
-          jvel(Eigen::VectorXd::Zero(mahru::num_act_joint)) {}
+          jvel(Eigen::VectorXd::Zero(mahru::num_act_joint))
+    {
+        for (int i = 0; i < 4; ++i) {
+            p_C[i].setZero();
+            pdot_C[i].setZero();
+            R_C[i].setIdentity();
+            Jp_C[i].setZero();
+            Jdotp_C[i].setZero();
+            Jr_C[i].setZero();
+            Jdotr_C[i].setZero();
+            Jp_C_prev[i].setZero();
+            Jr_C_prev[i].setZero();
+        }
+    }
 };
 
 // --- Commands & actuator outputs: motion targets + torque (not "motor struct" only) ---

@@ -10,6 +10,7 @@
 
 #include "Interface/MuJoCo/traj_viz_util.hpp"
 
+#include "Utils/JointTrajectory.h"
 #include "3rd-parties/ARBMLlib/ARBML.h"
 
 using namespace mahru;

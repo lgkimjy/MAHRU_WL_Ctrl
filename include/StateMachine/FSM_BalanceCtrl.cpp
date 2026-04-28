@@ -25,7 +25,7 @@ void FSM_BalanceCtrlState<T>::onEnter()
 	mjModel* mnew = mj_loadXML(
         (std::string(CMAKE_SOURCE_DIR) + std::string(mahru::model_xml)).c_str(), nullptr, nullptr, 0
     );
-	arbml_->initRobot(mnew);
+    arbml_->initRobot(mnew);
     initEEParameters(mnew);
     updateModel();
 
@@ -50,7 +50,6 @@ void FSM_BalanceCtrlState<T>::runNominal()
 template <typename T>
 void FSM_BalanceCtrlState<T>::computeWeightedWBC()
 {
-
 }
 
 template <typename T>
@@ -138,15 +137,15 @@ void FSM_BalanceCtrlState<T>::initEEParameters(const mjModel* model)
 	R0_lnk2EE.shrink_to_fit();
 
 	/////	Initialize transformation matrix about base, end-effector, contact wheel
-	p_EE.reserve(no_of_EE);
-	R_EE.reserve(no_of_EE);
-	pdot_EE.reserve(no_of_EE);
-	omega_EE.reserve(no_of_EE);
+	p_EE.resize(no_of_EE);
+	R_EE.resize(no_of_EE);
+	pdot_EE.resize(no_of_EE);
+	omega_EE.resize(no_of_EE);
 
-	Jp_EE.reserve(no_of_EE);		//	Linear Jacobian of end-effectors
-	Jr_EE.reserve(no_of_EE);		//	Angular Jacobian of end-effectors
-	Jdotp_EE.reserve(no_of_EE);		//	Time derivative of Jp_EE
-	Jdotr_EE.reserve(no_of_EE);		//	Time derivative of Jr_EE
+	Jp_EE.resize(no_of_EE);		//	Linear Jacobian of end-effectors
+	Jr_EE.resize(no_of_EE);		//	Angular Jacobian of end-effectors
+	Jdotp_EE.resize(no_of_EE);		//	Time derivative of Jp_EE
+	Jdotr_EE.resize(no_of_EE);		//	Time derivative of Jr_EE
 
 	for (int i = 0; i < no_of_EE; i++) {
 		p_EE[i].setZero();
@@ -237,22 +236,22 @@ void FSM_BalanceCtrlState<T>::computeContactKinematics()
 	wheel_sagittal_vec[1] = normalize(normal_vec[1].cross(wheel_tangent_vec[1]));
 	wheel_d_k_vec[1] = normalize(wheel_tangent_vec[1].cross(z_wheel_vec[1]));
 
-    robot_data_->fbk.p_C[0] = p_EE[2] - radius_toe * wheel_d_k_vec[0] - radius_Torus_sphere_toe * normal_vec[0]; // toe end-effector right
+    robot_data_->fbk.p_C[0] = p_EE[2] - radius_toe * wheel_d_k_vec[0] - radius_Torus_sphere_toe * normal_vec[0]; // right toe
     robot_data_->fbk.R_C[0].block(0, X_AXIS, 3, 1) = wheel_tangent_vec[0];
     robot_data_->fbk.R_C[0].block(0, Y_AXIS, 3, 1) = wheel_sagittal_vec[0];
     robot_data_->fbk.R_C[0].block(0, Z_AXIS, 3, 1) = normal_vec[0];
 
-    robot_data_->fbk.p_C[1] = p_EE[4] - radius_toe * wheel_d_k_vec[1] - radius_Torus_sphere_toe * normal_vec[1]; // toe end-effector left
-    robot_data_->fbk.R_C[1].block(0, X_AXIS, 3, 1) = wheel_tangent_vec[1];
-    robot_data_->fbk.R_C[1].block(0, Y_AXIS, 3, 1) = wheel_sagittal_vec[1];
-    robot_data_->fbk.R_C[1].block(0, Z_AXIS, 3, 1) = normal_vec[1];
+    robot_data_->fbk.p_C[1] = p_EE[3] - radius_wheel * wheel_d_k_vec[0] - radius_Torus_sphere * normal_vec[0]; // right wheel
+    robot_data_->fbk.R_C[1].block(0, X_AXIS, 3, 1) = wheel_tangent_vec[0];
+    robot_data_->fbk.R_C[1].block(0, Y_AXIS, 3, 1) = wheel_sagittal_vec[0];
+    robot_data_->fbk.R_C[1].block(0, Z_AXIS, 3, 1) = normal_vec[0];
 
-    robot_data_->fbk.p_C[2] = p_EE[3] - radius_wheel * wheel_d_k_vec[0] - radius_Torus_sphere * normal_vec[0]; // wheel end-effector right
-    robot_data_->fbk.R_C[2].block(0, X_AXIS, 3, 1) = wheel_tangent_vec[0];
-    robot_data_->fbk.R_C[2].block(0, Y_AXIS, 3, 1) = wheel_sagittal_vec[0];
-    robot_data_->fbk.R_C[2].block(0, Z_AXIS, 3, 1) = normal_vec[0];
+    robot_data_->fbk.p_C[2] = p_EE[4] - radius_toe * wheel_d_k_vec[1] - radius_Torus_sphere_toe * normal_vec[1]; // left toe
+    robot_data_->fbk.R_C[2].block(0, X_AXIS, 3, 1) = wheel_tangent_vec[1];
+    robot_data_->fbk.R_C[2].block(0, Y_AXIS, 3, 1) = wheel_sagittal_vec[1];
+    robot_data_->fbk.R_C[2].block(0, Z_AXIS, 3, 1) = normal_vec[1];
 
-    robot_data_->fbk.p_C[3] = p_EE[5] - radius_wheel * wheel_d_k_vec[1] - radius_Torus_sphere * normal_vec[1]; // wheel end-effector left
+    robot_data_->fbk.p_C[3] = p_EE[5] - radius_wheel * wheel_d_k_vec[1] - radius_Torus_sphere * normal_vec[1]; // left wheel
     robot_data_->fbk.R_C[3].block(0, X_AXIS, 3, 1) = wheel_tangent_vec[1];
     robot_data_->fbk.R_C[3].block(0, Y_AXIS, 3, 1) = wheel_sagittal_vec[1];
     robot_data_->fbk.R_C[3].block(0, Z_AXIS, 3, 1) = normal_vec[1];
@@ -262,19 +261,19 @@ void FSM_BalanceCtrlState<T>::computeContactKinematics()
         arbml_->getBodyJacobDeriv(id_body_EE[i+2], robot_data_->fbk.Jdotp_C[i], robot_data_->fbk.Jdotr_C[i]);
     }
 
+    // for(int i=0; i<4; i++) {
+    //     const auto Jp_C = robot_data_->fbk.Jp_C[i];
+    //     const auto Jr_C = robot_data_->fbk.Jr_C[i];
+    //     robot_data_->fbk.Jdotp_C[i] = (Jp_C - robot_data_->fbk.Jp_C_prev[i]) / arbml_->getSamplingTime();
+    //     robot_data_->fbk.Jdotr_C[i] = (Jr_C - robot_data_->fbk.Jr_C_prev[i]) / arbml_->getSamplingTime();
+    //     robot_data_->fbk.Jp_C_prev[i] = Jp_C;
+    //     robot_data_->fbk.Jr_C_prev[i] = Jr_C;
+    // }
+
     robot_data_->fbk.pdot_C[0] = robot_data_->fbk.Jp_C[0] * arbml_->xidot;
     robot_data_->fbk.pdot_C[1] = robot_data_->fbk.Jp_C[1] * arbml_->xidot;
     robot_data_->fbk.pdot_C[2] = robot_data_->fbk.Jp_C[2] * arbml_->xidot;
     robot_data_->fbk.pdot_C[3] = robot_data_->fbk.Jp_C[3] * arbml_->xidot;
-
-	// for( int i=0; i< no_of_EE; i++)
-	// {
-	// 	Jdotp_C_numeric[i] = (Jp_C[i] - Jp_C_prev[i])/robot.getSamplingTime();
-	// 	Jp_C_prev[i] = Jp_C[i];
-	// 	Jdotr_C_numeric[i] = (Jr_C[i] - Jr_C_prev[i])/robot.getSamplingTime();
-	// 	Jr_C_prev[i] = Jr_C[i];
-	// }
-	// Jdotp_C = Jdotp_C_numeric;
 }
 
 template <typename T>
@@ -290,7 +289,6 @@ void FSM_BalanceCtrlState<T>::updateVisualization()
     viz_->sphere("BalanceCtrl/CoM", arbml_->p_CoM,
         0.035, {1.0f, 0.0f, 0.0f, 0.5f}
     );
-
     Eigen::Vector3d zmp_pos = arbml_->pos_ZMP;
     zmp_pos.z() = 0.0;
     viz_->cylinder("BalanceCtrl/ZMP", zmp_pos,
@@ -306,11 +304,11 @@ void FSM_BalanceCtrlState<T>::updateVisualization()
     //     );
     // }
 
-    // for(int i = 0; i < 4; i++) {
-    //     viz_->sphere("BalanceCtrl/Contact_" + std::to_string(i) + "_pos",
-    //         robot_data_->fbk.p_C[i], 0.02, {0.0f, 0.3f, 0.3f, 0.8f}
-    //     );
-    // }
+    for(int i = 0; i < 4; i++) {
+        viz_->sphere("BalanceCtrl/Contact_" + std::to_string(i) + "_pos",
+            robot_data_->fbk.p_C[i], 0.02, {0.0f, 0.3f, 0.3f, 0.8f}
+        );
+    }
 }
 
 template <typename T>
