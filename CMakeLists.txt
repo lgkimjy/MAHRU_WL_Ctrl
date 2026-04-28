@@ -29,6 +29,45 @@ find_package(Threads REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(HDF5 REQUIRED COMPONENTS C HL CXX)
 find_package(yaml-cpp CONFIG REQUIRED)
+include(FetchContent)
+find_package(OsqpEigen QUIET)
+if(NOT OsqpEigen_FOUND)
+  message(STATUS "OsqpEigen not found. Fetching OSQP and OsqpEigen via FetchContent.")
+  set(OSQP_BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
+  set(OSQP_BUILD_DEMO_EXE OFF CACHE BOOL "" FORCE)
+  set(OSQP_BUILD_UNITTESTS OFF CACHE BOOL "" FORCE)
+  set(OSQP_EIGEN_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(OSQP_EIGEN_BUILD_PYTHON OFF CACHE BOOL "" FORCE)
+
+  FetchContent_Declare(
+    osqp
+    GIT_REPOSITORY https://github.com/osqp/osqp.git
+    GIT_TAG v0.6.3
+  )
+  FetchContent_MakeAvailable(osqp)
+  foreach(_osqp_target IN ITEMS osqp osqpstatic)
+    if(TARGET ${_osqp_target})
+      target_compile_definitions(${_osqp_target} PRIVATE _POSIX_C_SOURCE=199309L)
+    endif()
+  endforeach()
+
+  FetchContent_Declare(
+    osqp_eigen
+    GIT_REPOSITORY https://github.com/robotology/osqp-eigen.git
+    GIT_TAG v0.8.0
+  )
+  set(_BUILD_TESTING_SAVED ${BUILD_TESTING})
+  set(_BUILD_SHARED_LIBS_SAVED ${BUILD_SHARED_LIBS})
+  set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(osqp_eigen)
+  set(BUILD_TESTING ${_BUILD_TESTING_SAVED} CACHE BOOL "" FORCE)
+  set(BUILD_SHARED_LIBS ${_BUILD_SHARED_LIBS_SAVED} CACHE BOOL "" FORCE)
+endif()
+
+if(NOT TARGET OsqpEigen::OsqpEigen AND TARGET OsqpEigen)
+  add_library(OsqpEigen::OsqpEigen ALIAS OsqpEigen)
+endif()
 
 file(GLOB FSM_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/include/StateMachine/FSM_*.cpp"
@@ -39,6 +78,10 @@ set(ARBML_SRC
   include/3rd-parties/ARBMLlib/RigidBody.cpp
 )
 
+set(MPC_SRC
+  include/Controller/ConvexMPC/ConvexMpc.cpp
+)
+
 add_executable(mahru_ctrl
   src/main.cpp
   src/MJSimulationBridge.cpp
@@ -47,6 +90,7 @@ add_executable(mahru_ctrl
   include/Interface/MuJoCo/simulate.cc
   ${FSM_SOURCES}
   ${ARBML_SRC}
+  ${MPC_SRC}
 )
 
 target_include_directories(mahru_ctrl PRIVATE
@@ -58,6 +102,7 @@ target_include_directories(mahru_ctrl PRIVATE
 
 target_link_libraries(mahru_ctrl PRIVATE
   Eigen3::Eigen
+  OsqpEigen::OsqpEigen
   yaml-cpp::yaml-cpp
   mujoco::libsimulate
   mujoco::mujoco

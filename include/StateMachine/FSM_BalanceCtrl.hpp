@@ -12,6 +12,7 @@
 
 #include "Utils/JointTrajectory.h"
 #include "3rd-parties/ARBMLlib/ARBML.h"
+#include "Controller/ConvexMPC/ConvexMpc.h"
 
 using namespace mahru;
 
@@ -31,9 +32,19 @@ private:
     RobotData*  robot_data_;
     CARBML*     arbml_ = nullptr;
     mujoco::TrajVizUtil* viz_ = nullptr;
+    ConvexMpc convex_mpc_;
 
     Eigen::Matrix<T, num_act_joint, 1>      jpos_0_;
+    Eigen::Vector3d                         p_CoM_wbc_d_ = Eigen::Vector3d::Zero();
+    Eigen::Matrix3d                         R_B_wbc_d_ = Eigen::Matrix3d::Identity();
+    Eigen::Vector3d                         mpc_euler_d_ = Eigen::Vector3d::Zero();
+    Eigen::Matrix<T, num_act_joint, 1>      torq_mpc_ = Eigen::Matrix<T, num_act_joint, 1>::Zero();
+    Eigen::Matrix<double, ConvexMpc::kForceDim, 1> grf_mpc_ = Eigen::Matrix<double, ConvexMpc::kForceDim, 1>::Zero();
+    double                                  mpc_time_ = 0.0;
+    double                                  mpc_dt_ = 0.05;
+    bool                                    is_mpc_solved_ = false;
     
+    void computeConvexMPC();
     void computeWeightedWBC();
 
     void updateModel();

@@ -1,5 +1,7 @@
 #include "FSM_BalanceCtrl.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <string>
 #include <yaml-cpp/yaml.h>
@@ -31,6 +33,13 @@ void FSM_BalanceCtrlState<T>::onEnter()
 
     // Initialize Command
     jpos_0_ = robot_data_->ctrl.jpos_d;
+    p_CoM_wbc_d_ = arbml_->p_CoM;
+    R_B_wbc_d_ = arbml_->R_B;
+    const Eigen::Vector3d eul_zxy_d = _Rot2EulZXY(R_B_wbc_d_);
+    mpc_euler_d_ << eul_zxy_d(1), eul_zxy_d(2), eul_zxy_d(0);
+    torq_mpc_.setZero();
+    grf_mpc_.setZero();
+    mpc_time_ = 0.0;
 
     readConfig(CMAKE_SOURCE_DIR "/config/fsm_BalanceCtrl_config.yaml");
     this->state_time = 0.0;
@@ -40,7 +49,7 @@ template <typename T>
 void FSM_BalanceCtrlState<T>::runNominal()
 {
     updateModel();
-    computeWeightedWBC();
+    computeConvexMPC();
     updateCommand();
     updateVisualization();
 
@@ -48,8 +57,68 @@ void FSM_BalanceCtrlState<T>::runNominal()
 }
 
 template <typename T>
-void FSM_BalanceCtrlState<T>::computeWeightedWBC()
+void FSM_BalanceCtrlState<T>::computeConvexMPC()
 {
+    constexpr double kControlDt = 0.001;
+
+    if (mpc_time_ <= 0.0) {
+        ConvexMpc::Input mpc_input;
+        mpc_input.mass = arbml_->getTotalMass();
+        mpc_input.R_B = arbml_->R_B;
+
+        const Eigen::Vector3d eul_zxy = _Rot2EulZXY(arbml_->R_B);
+        mpc_input.euler_B << eul_zxy(1), eul_zxy(2), eul_zxy(0);
+
+        mpc_euler_d_(2) += robot_data_->ctrl.ang_vel_d(2) * mpc_dt_;
+        mpc_input.euler_B_d = mpc_euler_d_;
+        mpc_input.p_CoM = arbml_->p_CoM;
+        mpc_input.pdot_CoM = arbml_->pdot_CoM;
+        mpc_input.omega_B = arbml_->omega_B;
+        mpc_input.lin_vel_d = robot_data_->ctrl.lin_vel_d;
+        mpc_input.ang_vel_d = robot_data_->ctrl.ang_vel_d;
+        mpc_input.com_height_d = p_CoM_wbc_d_(2);
+
+        Eigen::Matrix3d I_G = Eigen::Matrix3d::Zero();
+        for (int i = 0; i < static_cast<int>(mahru::NO_OF_BODY); ++i) {
+            I_G += arbml_->I_G_BCS[i]
+                 - arbml_->body[i].get_mass()
+                   * Skew(arbml_->rpos_lnk[i]) * Skew(arbml_->rpos_lnk[i]);
+        }
+        mpc_input.trunk_inertia = I_G;
+
+        for (int i = 0; i < ConvexMpc::kNumContacts; ++i) {
+            mpc_input.contact_pos_abs.col(i) = robot_data_->fbk.p_C[i] - arbml_->p_CoM;
+        }
+
+        is_mpc_solved_ = convex_mpc_.update(mpc_input, mpc_dt_);
+        if (is_mpc_solved_) {
+            grf_mpc_ = convex_mpc_.groundReactionForce();
+        }
+    }
+
+    Eigen::MatrixXd J_contact = Eigen::MatrixXd::Zero(ConvexMpc::kForceDim, mahru::nDoF);
+    for (int i = 0; i < ConvexMpc::kNumContacts; ++i) {
+        J_contact.block(DOF3 * i, 0, DOF3, mahru::nDoF) = robot_data_->fbk.Jp_C[i];
+    }
+
+    const Eigen::Matrix<double, mahru::nDoF, 1> generalized_torque =
+        arbml_->C_mat * arbml_->xidot + arbml_->g_vec - J_contact.transpose() * grf_mpc_;
+
+    torq_mpc_ = generalized_torque.tail(mahru::num_act_joint);
+    torq_mpc_ += robot_data_->param.Kd.asDiagonal() * (-robot_data_->fbk.jvel);
+    // torq_mpc_ += robot_data_->param.Kp.asDiagonal() * (jpos_0_ - robot_data_->fbk.jpos) \
+        + robot_data_->param.Kd.asDiagonal() * (-robot_data_->fbk.jvel);
+
+    for (int i = 0; i < torq_mpc_.size(); ++i) {
+        if (!std::isfinite(torq_mpc_(i))) {
+            torq_mpc_(i) = robot_data_->ctrl.torq_d(i);
+        }
+    }
+
+    mpc_time_ += kControlDt;
+    if (mpc_time_ > mpc_dt_) {
+        mpc_time_ = 0.0;
+    }
 }
 
 template <typename T>
@@ -99,8 +168,7 @@ void FSM_BalanceCtrlState<T>::updateCommand()
 {
     robot_data_->ctrl.jpos_d = jpos_0_;
     robot_data_->ctrl.jvel_d.setZero();
-    robot_data_->ctrl.torq_d = robot_data_->param.Kp.asDiagonal() * (robot_data_->ctrl.jpos_d - robot_data_->fbk.jpos) + \
-                                robot_data_->param.Kd.asDiagonal() * (robot_data_->ctrl.jvel_d - robot_data_->fbk.jvel);
+    robot_data_->ctrl.torq_d = torq_mpc_;
 }
 
 template <typename T>
@@ -289,6 +357,42 @@ void FSM_BalanceCtrlState<T>::updateVisualization()
     viz_->sphere("BalanceCtrl/CoM", arbml_->p_CoM,
         0.035, {1.0f, 0.0f, 0.0f, 0.5f}
     );
+    // viz_->sphere("BalanceCtrl/CoM_d", p_CoM_wbc_d_,
+    //     0.025, {0.1f, 0.8f, 1.0f, 0.8f}
+    // );
+
+    viz_->clearPrefix("BalanceCtrl/MPC_Horizon");
+    if (is_mpc_solved_ && convex_mpc_.predictedStates().allFinite()) {
+        const Eigen::VectorXd horizon_states = convex_mpc_.predictedStates();
+        viz_->mpcHorizon("BalanceCtrl/MPC_Horizon/path",
+            horizon_states,
+            ConvexMpc::kPlanHorizon,
+            ConvexMpc::kStateDim,
+            3,
+            4.0,
+            {1.0f, 0.0f, 0.0f, 0.8f}
+        );
+
+        for (int i = 0; i < ConvexMpc::kPlanHorizon; ++i) {
+            const Eigen::Vector3d pos =
+                convex_mpc_.predictedStates().segment<3>(i * ConvexMpc::kStateDim + 3);
+            viz_->sphere("BalanceCtrl/MPC_Horizon/point_" + std::to_string(i),
+                pos,
+                0.012,
+                {1.0f, 0.0f, 0.0f, 1.0f}
+            );
+        }
+    }
+
+    // viz_->pushTrail("BalanceCtrl/CoM_d_traj",
+    //     p_CoM_wbc_d_,
+    //     500, 4.0, {1.0f, 0.0f, 0.0f, 0.8f}
+    // );
+    viz_->pushTrail("BalanceCtrl/CoM_traj",
+        arbml_->p_CoM,
+        500, 4.0, {1.0f, 0.5f, 0.5f, 1.0f}
+    );
+
     Eigen::Vector3d zmp_pos = arbml_->pos_ZMP;
     zmp_pos.z() = 0.0;
     viz_->cylinder("BalanceCtrl/ZMP", zmp_pos,
