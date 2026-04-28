@@ -24,8 +24,15 @@ SimulationInterface::SimulationInterface(const std::string& scene_file):
     mjv_defaultOption(&opt_);
     mjv_defaultPerturb(&pert_);
 
+    auto platform_ui = std::make_unique<mj::GlfwAdapter>();
+
+    // uncomment this line, if wanted to change the spawn window size
+    // if (GLFWwindow* window = glfwGetCurrentContext()) {
+    //     glfwSetWindowSize(window, 4000, 2000);  // window size
+    // }
+    
     mjSim_ = new mj::Simulate(
-        std::make_unique<mj::GlfwAdapter>(),
+        std::move(platform_ui),
         &cam_, &opt_, &pert_, /* is_passive = */ false
     );
 }
