@@ -23,13 +23,13 @@
 #include <optional>
 #include <ratio>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include <mujoco/mjui.h>
 #include <mujoco/mujoco.h>
 #include "platform_ui_adapter.h"
-
 #include "traj_viz_util.hpp"
 
 namespace mujoco {
@@ -55,9 +55,10 @@ class Simulate {
       std::unique_ptr<PlatformUIAdapter> platform_ui_adapter,
       mjvCamera* cam, mjvOption* opt, mjvPerturb* pert, bool is_passive);
 
-  // Synchronize mjModel and mjData state with UI inputs, and update
-  // visualization.
-  void Sync();
+  // Synchronize state with UI inputs, and update visualization.  If state_only
+  // is false mjData and mjModel will be updated, otherwise only the subset of
+  // mjData corresponding to mjSTATE_INTEGRATION will be synced.
+  void Sync(bool state_only = false);
 
   void UpdateHField(int hfieldid);
   void UpdateMesh(int meshid);
@@ -89,7 +90,7 @@ class Simulate {
   void AddToHistory();
 
   // inject control noise
-  void InjectNoise();
+  void InjectNoise(int key);
 
   // constants
   static constexpr int kMaxFilenameLength = 1000;
@@ -123,6 +124,8 @@ class Simulate {
   std::vector<std::optional<std::pair<mjtNum, mjtNum>>> actuator_ctrlrange_;
   std::vector<std::string> actuator_names_;
 
+  std::vector<std::string> equality_names_;
+
   std::vector<mjtNum> history_;  // history buffer (nhistory x state_size)
 
   // mjModel and mjData fields that can be modified by the user through the GUI
@@ -130,13 +133,20 @@ class Simulate {
   std::vector<mjtNum> qpos_prev_;
   std::vector<mjtNum> ctrl_;
   std::vector<mjtNum> ctrl_prev_;
+  std::vector<mjtByte> eq_active_;
+  std::vector<mjtByte> eq_active_prev_;
 
-  mjvSceneState scnstate_;
+  // in passive mode the user owns m_ and d_, these "passive" instances are
+  // owned by Simulate, updated from the user by the Sync() method
+  mjModel* m_passive_ = nullptr;
+  mjData* d_passive_ = nullptr;
+  std::vector<mjvGeom> user_scn_geoms_;
+
   mjOption mjopt_prev_;
+  mjVisual mjvis_prev_;
+  mjStatistic mjstat_prev_;
   mjvOption opt_prev_;
   mjvCamera cam_prev_;
-
-  int warn_vgeomfull_prev_;
 
   // pending GUI-driven actions, to be applied at the next call to Sync
   struct {
@@ -146,7 +156,8 @@ class Simulate {
     std::optional<std::string> print_data;
     bool reset;
     bool align;
-    bool copy_pose;
+    bool copy_key;
+    bool copy_key_full_precision;
     bool load_from_history;
     bool load_key;
     bool save_key;
@@ -157,8 +168,10 @@ class Simulate {
     bool ui_update_simulation;
     bool ui_update_physics;
     bool ui_update_rendering;
+    bool ui_update_visualization;
     bool ui_update_joint;
     bool ui_update_ctrl;
+    bool ui_update_equality;
     bool ui_remake_ctrl;
   } pending_ = {};
 
@@ -185,7 +198,7 @@ class Simulate {
   int busywait = 0;
 
   // keyframe index
-  int key = 0;
+  int key = -1;
 
   // index of history-scrubber slider
   int scrub_index = 0;
@@ -198,6 +211,9 @@ class Simulate {
   std::atomic_int droploadrequest = 0;
   std::atomic_int screenshotrequest = 0;
   std::atomic_int uiloadrequest = 0;
+  std::atomic_int newfigurerequest = 0;
+  std::atomic_int newtextrequest = 0;
+  std::atomic_int newimagerequest = 0;
 
   // loadrequest
   //   3: display a loading message
@@ -251,9 +267,26 @@ class Simulate {
   mjvFigure figsize = {};
   mjvFigure figsensor = {};
 
-  // additional user-defined visualization geoms (used in passive mode)
+  // Image sensor visualization - displays pre-rendered images from mjSENS_USER
+  int image_sensor_count = 0;
+  int selected_image_sensor = -1;  // -1 = show bar chart
+  int image_sensor_ui_selection = 0;      // UI dropdown index (0=All, 1+=sensor)
+  std::vector<int> image_sensor_indices;
+  std::vector<std::string> image_sensor_names;
+  std::unique_ptr<unsigned char[]> sensor_image;
+  int sensor_image_width = 0;
+  int sensor_image_height = 0;
+  int sensor_image_last_seq = -1;  // Last seq read from sensordata
+
+  // additional user-defined visualization
   mjvScene* user_scn = nullptr;
   mjtByte user_scn_flags_prev_[mjNRNDFLAG];
+  std::vector<std::pair<mjrRect, mjvFigure>> user_figures_;
+  std::vector<std::pair<mjrRect, mjvFigure>> user_figures_new_;
+  std::vector<std::tuple<int, int, std::string, std::string>> user_texts_;
+  std::vector<std::tuple<int, int, std::string, std::string>> user_texts_new_;
+  std::vector<std::tuple<mjrRect, std::unique_ptr<unsigned char[]>>> user_images_;
+  std::vector<std::tuple<mjrRect, std::unique_ptr<unsigned char[]>>> user_images_new_;
 
   // OpenGL rendering and UI
   int refresh_rate = 60;
@@ -294,7 +327,7 @@ class Simulate {
     {mjITEM_BUTTON,    "Reset",         2, nullptr,              " #259"},
     {mjITEM_BUTTON,    "Reload",        5, nullptr,              "CL"},
     {mjITEM_BUTTON,    "Align",         2, nullptr,              "CA"},
-    {mjITEM_BUTTON,    "Copy pose",     2, nullptr,              "CC"},
+    {mjITEM_BUTTON,    "Copy state",    2, nullptr,              "CC"},
     {mjITEM_SLIDERINT, "Key",           3, &this->key,           "0 0"},
     {mjITEM_BUTTON,    "Load key",      3},
     {mjITEM_BUTTON,    "Save key",      3},
@@ -325,28 +358,26 @@ class Simulate {
   int mesh_upload_ = -1;
   int hfield_upload_ = -1;
 
-  //////////////// JY Code ////////////////
   TrajVizUtil traj_viz_util_;
   Eigen::Vector3d lin_vel_d = {0, 0, 0};
   Eigen::Vector3d ang_vel_d = {0, 0, 0};
   int gait_type = 0;
 
-  mjuiDef defCmd[18] = {
+  mjuiDef def_cmd[12] = {
     {mjITEM_SECTION,    "Command", mjPRESERVE, nullptr, "AB"},
-    {mjITEM_BUTTON,     "Clear all",       2,   nullptr,        "C#259"},       // itemid == 0
-    {mjITEM_SEPARATOR,  "Desired Cmd", 1},
-    {mjITEM_SLIDERNUM,  "lin_vel_d,x", 1, &this->lin_vel_d[0], "-1.0 1.0"},
-    {mjITEM_SLIDERNUM,  "lin_vel_d,y ", 1, &this->lin_vel_d[1], "-0.3 0.3"},
-    {mjITEM_SLIDERNUM,  "lin_vel_d,z ", 1, &this->lin_vel_d[2], "-0.5 0.5"},
-    {mjITEM_SLIDERNUM,  "ang_vel_d,r", 2, &this->ang_vel_d[0], "-0.3 0.3"},
-    {mjITEM_SLIDERNUM,  "ang_vel_d,p", 2, &this->ang_vel_d[1], "-0.3 0.3"},
-    {mjITEM_SLIDERNUM,  "ang_vel_d,y", 2, &this->ang_vel_d[2], "-0.3 0.3"},
-    {mjITEM_SEPARATOR,  "Gait Selection", 1},
-    {mjITEM_SELECT,     "", 2, &this->gait_type, "Stand\nLineWalk (SSP)\nPointWalk (SSP)\nLineWalk (DSP)\nPointWalk (DSP)\nJumping\nLeaping\nSliding"},
+    {mjITEM_BUTTON,     "Clear all",       2, nullptr, "C#259"},
+    {mjITEM_SEPARATOR,  "Desired Cmd",     1},
+    {mjITEM_SLIDERNUM,  "lin_vel_d,x",     1, &this->lin_vel_d[0], "-1.0 1.0"},
+    {mjITEM_SLIDERNUM,  "lin_vel_d,y",     1, &this->lin_vel_d[1], "-0.3 0.3"},
+    {mjITEM_SLIDERNUM,  "lin_vel_d,z",     1, &this->lin_vel_d[2], "-0.5 0.5"},
+    {mjITEM_SLIDERNUM,  "ang_vel_d,r",     2, &this->ang_vel_d[0], "-0.3 0.3"},
+    {mjITEM_SLIDERNUM,  "ang_vel_d,p",     2, &this->ang_vel_d[1], "-0.3 0.3"},
+    {mjITEM_SLIDERNUM,  "ang_vel_d,y",     2, &this->ang_vel_d[2], "-0.3 0.3"},
+    {mjITEM_SEPARATOR,  "Gait Selection",  1},
+    {mjITEM_SELECT,     "",                2, &this->gait_type,
+     "Stand\nLineWalk (SSP)\nPointWalk (SSP)\nLineWalk (DSP)\nPointWalk (DSP)\nJumping\nLeaping\nSliding"},
     {mjITEM_END}
   };
-  void MakeCommandSection();
-  ////////////////////////////////////////
 };
 }  // namespace mujoco
 

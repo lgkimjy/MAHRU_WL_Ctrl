@@ -118,26 +118,7 @@ void FSM_BalanceCtrlState<T>::computeConvexMPC()
         }
     }
 
-    Eigen::MatrixXd J_contact = Eigen::MatrixXd::Zero(ConvexMpc::kForceDim, mahru::nDoF);
-    for (int i = 0; i < ConvexMpc::kNumContacts; ++i) {
-        J_contact.block(DOF3 * i, 0, DOF3, mahru::nDoF) = robot_data_->fbk.Jp_C[i];
-    }
-
-    const Eigen::Matrix<double, mahru::nDoF, 1> generalized_torque =
-        arbml_->C_mat * arbml_->xidot + arbml_->g_vec - J_contact.transpose() * grf_mpc_;
-
-    torq_mpc_ = generalized_torque.tail(mahru::num_act_joint);
-    torq_mpc_ += robot_data_->param.Kd.asDiagonal() * (-robot_data_->fbk.jvel);
-    // torq_mpc_ += robot_data_->param.Kp.asDiagonal() * (jpos_0_ - robot_data_->fbk.jpos) \
-        + robot_data_->param.Kd.asDiagonal() * (-robot_data_->fbk.jvel);
-
-    for (int i = 0; i < torq_mpc_.size(); ++i) {
-        if (!std::isfinite(torq_mpc_(i))) {
-            torq_mpc_(i) = robot_data_->ctrl.torq_d(i);
-        }
-    }
-
-    applySwingTask();
+    computeWeightedWBC();
 
     for (int i = 0; i < torq_mpc_.size(); ++i) {
         if (!std::isfinite(torq_mpc_(i))) {
@@ -152,6 +133,72 @@ void FSM_BalanceCtrlState<T>::computeConvexMPC()
 }
 
 template <typename T>
+void FSM_BalanceCtrlState<T>::computeWeightedWBC()
+{
+    constexpr bool kEnableWeightedWbcControl = true;
+    constexpr bool kRunWeightedWbcDryRun = true;
+
+    computeMpcTorqueFallback();
+    const Eigen::Matrix<T, mahru::num_act_joint, 1> fallback_torque = torq_mpc_;
+
+    WeightedWBC::Input wbc_input;
+    wbc_input.q_d = jpos_0_.template cast<double>();
+    wbc_input.qdot_d.setZero();
+    wbc_input.qddot_d.setZero();
+    wbc_input.p_CoM_d = p_CoM_wbc_d_;
+    wbc_input.pdot_CoM_d.setZero();
+    wbc_input.lin_vel_d = robot_data_->ctrl.lin_vel_d;
+    wbc_input.R_B_d = R_B_wbc_d_;
+    wbc_input.grfs_mpc = grf_mpc_;
+    wbc_input.swing_contact_index = loco_ctrl_.swingContactIndex();
+
+    if (wbc_input.swing_contact_index >= 0) {
+        wbc_input.p_sw_d = loco_ctrl_.swingPosition();
+        wbc_input.pdot_sw_d = loco_ctrl_.swingVelocity();
+    }
+
+    WeightedWBC::Output wbc_output;
+    if (kEnableWeightedWbcControl || kRunWeightedWbcDryRun) {
+        wbc_output = weighted_wbc_.update(*arbml_, *robot_data_, wbc_input);
+    }
+
+    const auto& wbc_diag = weighted_wbc_.diagnostics();
+    const bool use_wbc =
+        kEnableWeightedWbcControl
+        && wbc_output.solved
+        && wbc_output.torq_ff.allFinite();
+
+    static int count = 0;
+    if(!use_wbc && count != 1) {
+        std::cout << "\033[31m[WBC] WBC Fail at time " << this->state_time << "s\033[0m" << std::endl;
+    }
+    else if(!use_wbc) {
+        count ++;
+    }
+
+    if (use_wbc) {
+        torq_mpc_ = wbc_output.torq_ff.template cast<T>();
+        return;
+    }
+}
+
+template <typename T>
+void FSM_BalanceCtrlState<T>::computeMpcTorqueFallback()
+{
+    Eigen::MatrixXd J_contact = Eigen::MatrixXd::Zero(ConvexMpc::kForceDim, mahru::nDoF);
+    for (int i = 0; i < ConvexMpc::kNumContacts; ++i) {
+        J_contact.block(DOF3 * i, 0, DOF3, mahru::nDoF) = robot_data_->fbk.Jp_C[i];
+    }
+    const Eigen::Matrix<double, mahru::nDoF, 1> generalized_torque =
+        arbml_->C_mat * arbml_->xidot
+        + arbml_->g_vec
+        - J_contact.transpose() * grf_mpc_;
+
+    torq_mpc_ = generalized_torque.tail(mahru::num_act_joint).template cast<T>();
+    torq_mpc_ += robot_data_->param.Kd.asDiagonal() * (-robot_data_->fbk.jvel);
+}
+
+template <typename T>
 void FSM_BalanceCtrlState<T>::applySwingTask()
 {
     const int swing_contact_index = loco_ctrl_.swingContactIndex();
@@ -159,21 +206,46 @@ void FSM_BalanceCtrlState<T>::applySwingTask()
         return;
     }
 
-    constexpr double kSwingKp = 2400.0;
-    constexpr double kSwingKd = 140.0;
-    constexpr double kMaxSwingForce = 1800.0;
+    const Eigen::Vector3d p_sw_d = loco_ctrl_.swingPosition();
+    const Eigen::Vector3d pdot_sw_d = loco_ctrl_.swingVelocity();
+    const Eigen::Vector3d p_sw = robot_data_->fbk.p_C[swing_contact_index];
+    const Eigen::Vector3d pdot_sw = robot_data_->fbk.pdot_C[swing_contact_index];
 
-    Eigen::Vector3d swing_force =
-        kSwingKp * (loco_ctrl_.swingPosition() - robot_data_->fbk.p_C[swing_contact_index])
-        + kSwingKd * (loco_ctrl_.swingVelocity() - robot_data_->fbk.pdot_C[swing_contact_index]);
-
-    for (int i = 0; i < 3; ++i) {
-        swing_force(i) = std::clamp(swing_force(i), -kMaxSwingForce, kMaxSwingForce);
+    if (!p_sw_d.allFinite()
+        || !pdot_sw_d.allFinite()
+        || !p_sw.allFinite()
+        || !pdot_sw.allFinite()
+        || !robot_data_->fbk.Jp_C[swing_contact_index].allFinite()) {
+        return;
     }
 
-    const Eigen::Matrix<double, mahru::nDoF, 1> generalized_torque =
-        robot_data_->fbk.Jp_C[swing_contact_index].transpose() * swing_force;
-    torq_mpc_ += generalized_torque.tail(mahru::num_act_joint);
+    constexpr double kSwingKp = 1800.0;
+    constexpr double kSwingKd = 100.0;
+    constexpr double kMaxSwingForce = 900.0;
+    constexpr double kMaxSwingTorque = 250.0;
+
+    Eigen::Vector3d swing_force =
+        kSwingKp * (p_sw_d - p_sw)
+        + kSwingKd * (pdot_sw_d - pdot_sw);
+
+    for (int i = 0; i < DOF3; ++i) {
+        swing_force(i) = std::clamp(swing_force(i), -kMaxSwingForce, kMaxSwingForce);
+    }
+    if (!swing_force.allFinite()) {
+        return;
+    }
+
+    Eigen::Matrix<double, mahru::num_act_joint, 1> swing_torque =
+        (robot_data_->fbk.Jp_C[swing_contact_index].transpose() * swing_force)
+            .tail(mahru::num_act_joint);
+    if (!swing_torque.allFinite()) {
+        return;
+    }
+
+    for (int i = 0; i < swing_torque.size(); ++i) {
+        swing_torque(i) = std::clamp(swing_torque(i), -kMaxSwingTorque, kMaxSwingTorque);
+    }
+    torq_mpc_ += swing_torque.template cast<T>();
 }
 
 template <typename T>

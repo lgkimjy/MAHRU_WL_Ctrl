@@ -1,20 +1,30 @@
 ##############################
 ### WBC Weight Gain Parameters
 ##############################
-W_Centroidal: 1
-W_JointAcc: 0.01
-W_qddot_regul: 0.00001
-W_rf_regul: 0.01
+W_Centroidal: 10
+W_swingLeg: 10
+W_JointAcc: 1
+W_CenAngMom_Compen: 1
+W_wheelAccel: 10
+W_qddot_regul: 0.001
+W_rf_regul: 0.001
 W_tau_regul: 0.001
+
+JointAccLimit:
+  qddot: 120
 
 ##############################
 ### Tracking Tasks PD Gain Parameters
 ##############################
 CentroidalTask:
-  com_kp: [10, 10, 10]
-  com_kd: [0.5, 0.5, 0.5]
-  orientation_kp: [10, 10, 10]
-  orientation_kd: [1, 1, 1]
+  com_kp: [150, 150, 200]
+  com_kd: [2, 2, 15]
+  orientation_kp: [100, 100, 10]
+  orientation_kd: [10, 10, 1]
+
+SwingTask:
+  kp: [1000, 1000, 1000]
+  kd: [40, 40, 40]
 
 JointAccTask:
   joints: [0, 1, 2, 3, 4, 5, 6, 7, 8]
@@ -26,3 +36,4 @@ JointAccTask:
 ##############################
 ContactWrench:
   k_f: 0.7
+  k_mu: 0.8

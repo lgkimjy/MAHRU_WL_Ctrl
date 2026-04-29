@@ -27,9 +27,9 @@ SimulationInterface::SimulationInterface(const std::string& scene_file):
     auto platform_ui = std::make_unique<mj::GlfwAdapter>();
 
     // uncomment this line, if wanted to change the spawn window size
-    if (GLFWwindow* window = glfwGetCurrentContext()) {
-        glfwSetWindowSize(window, 2500, 1750);  // window size
-    }
+    // if (GLFWwindow* window = glfwGetCurrentContext()) {
+    //     glfwSetWindowSize(window, 2500, 1750);  // window size
+    // }
     
     mjSim_ = new mj::Simulate(
         std::move(platform_ui),
@@ -222,7 +222,7 @@ void SimulationInterface::PhysicsLoop(mj::Simulate& sim) {
               }
 
               // inject noise
-              sim.InjectNoise();
+              sim.InjectNoise(sim.key);
 
               //  update feedback, controller, and command to robot
               //  @todo: call system->runCtrl()

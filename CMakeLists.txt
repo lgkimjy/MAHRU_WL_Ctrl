@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.16)
 
 project(mahru_ctrl LANGUAGES C CXX)
 
+if(APPLE)
+  add_compile_options(-Wno-error)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -20,6 +24,9 @@ if(NOT EXISTS "${TEMPLATE_MUJOCO_SOURCE_DIR}/CMakeLists.txt")
     "or configure with -DTEMPLATE_MUJOCO_SOURCE_DIR=/path/to/mujoco")
 endif()
 
+# MuJoCo 포함 코드 직전에 추가
+set(CMAKE_REQUIRED_FLAGS "-Wno-error")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error")
 set(MUJOCO_BUILD_EXAMPLES OFF CACHE BOOL "Build MuJoCo examples" FORCE)
 set(MUJOCO_BUILD_SIMULATE ON CACHE BOOL "Build MuJoCo simulate library" FORCE)
 set(MUJOCO_BUILD_TESTS OFF CACHE BOOL "Build MuJoCo tests" FORCE)
@@ -70,6 +77,14 @@ if(NOT TARGET OsqpEigen::OsqpEigen AND TARGET OsqpEigen)
   add_library(OsqpEigen::OsqpEigen ALIAS OsqpEigen)
 endif()
 
+if(TARGET mujoco::libmujoco_simulate)
+  set(MUJOCO_SIMULATE_TARGET mujoco::libmujoco_simulate)
+elseif(TARGET mujoco::libsimulate)
+  set(MUJOCO_SIMULATE_TARGET mujoco::libsimulate)
+else()
+  message(FATAL_ERROR "MuJoCo simulate library target was not found.")
+endif()
+
 file(GLOB FSM_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/include/StateMachine/FSM_*.cpp"
 )
@@ -86,6 +101,10 @@ set(MPC_SRC
   include/Trajectory/OnlineOptTraj.cpp
 )
 
+set(WBC_SRC
+  include/WBC/WeightedWBC.cpp
+)
+
 add_executable(mahru_ctrl
   src/main.cpp
   src/MJSimulationBridge.cpp
@@ -95,6 +114,7 @@ add_executable(mahru_ctrl
   ${FSM_SOURCES}
   ${ARBML_SRC}
   ${MPC_SRC}
+  ${WBC_SRC}
 )
 
 target_include_directories(mahru_ctrl PRIVATE
@@ -109,13 +129,17 @@ target_link_libraries(mahru_ctrl PRIVATE
   OsqpEigen::OsqpEigen
   eigen-quadprog::eigen-quadprog
   yaml-cpp::yaml-cpp
-  mujoco::libsimulate
+  ${MUJOCO_SIMULATE_TARGET}
   mujoco::mujoco
   glfw
   lodepng
   Threads::Threads
   ${HDF5_LIBRARIES}
 )
+
+if(APPLE)
+  target_link_libraries(mahru_ctrl PRIVATE "-framework CoreVideo")
+endif()
 
 if(DEFINED MUJOCO_SIMULATE_COMPILE_OPTIONS)
   target_compile_options(mahru_ctrl PUBLIC ${MUJOCO_SIMULATE_COMPILE_OPTIONS})

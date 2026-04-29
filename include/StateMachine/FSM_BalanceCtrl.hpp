@@ -13,6 +13,7 @@
 #include "3rd-parties/ARBMLlib/ARBML.h"
 #include "Controller/ConvexMPC/ConvexMpc.h"
 #include "Controller/ConvexMPC/LocoCtrl.hpp"
+#include "WBC/WeightedWBC.hpp"
 
 using namespace mahru;
 
@@ -33,6 +34,7 @@ private:
     CARBML*     arbml_ = nullptr;
     mujoco::TrajVizUtil* viz_ = nullptr;
     LocoCtrl loco_ctrl_;
+    WeightedWBC weighted_wbc_;
 
     Eigen::Matrix<T, num_act_joint, 1>      jpos_0_;
     Eigen::Vector3d                         p_CoM_wbc_d_ = Eigen::Vector3d::Zero();
@@ -52,6 +54,7 @@ private:
     void updateCommand();
     void updateVisualization();
     void readConfig(std::string config_file);
+    void computeMpcTorqueFallback();
     void applySwingTask();
 
     //////////////// ARBML ////////////////
