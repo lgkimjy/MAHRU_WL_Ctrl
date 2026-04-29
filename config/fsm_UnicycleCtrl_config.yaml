@@ -1,0 +1,21 @@
+notes:
+  description: "Initial UnicycleCtrl baseline: transition from JPosCtrl, hold all four contacts, and stabilize with WeightedWBC."
+  contact_mode: "four_contact_balance"
+  yaw_rate_command_enabled: false
+
+sway:
+  enabled: true
+  amplitude_m: [0.0, 0.0, 0.1]
+  frequency_hz: 0.2
+  ramp_time: 1.0
+
+Kp: [ 700,
+      700, 700, 700, 700,
+      700, 700, 700, 700,
+      700, 700, 700, 700, 700,
+      700, 700, 700, 700, 700 ]
+Kd: [ 40,
+      40, 40, 40, 40,
+      40, 40, 40, 40,
+      40, 40, 40, 40, 40,
+      40, 40, 40, 40, 40 ]

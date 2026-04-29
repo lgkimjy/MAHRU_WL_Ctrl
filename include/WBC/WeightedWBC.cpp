@@ -122,6 +122,10 @@ WBCTask WeightedWBC::formulateWeightedTask()
         + formulateSlidingJointTask()
         + formulateLinearMotionTask() * W_centroidal_;
 
+    if (input_.enable_centroidal_force_task) {
+        task = task + formulateCentroidalForceTask() * W_centroidal_force_;
+    }
+
     if (input_.swing_contact_index >= 0 && numContactPoints_ < ConvexMpc::kNumContacts) {
         task = task
             + formulateSwingLegTask(kp_swing_, kd_swing_) * W_swingLeg_
@@ -149,9 +153,75 @@ WBCTask WeightedWBC::formulateLinearMotionTask()
     a(3, 5) = 1.0;
     b(0) = kp_CoM_(2, 2) * (input_.p_CoM_d(2) - robot_->p_CoM(2))
          + kd_CoM_(2, 2) * (input_.pdot_CoM_d(2) - robot_->pdot_CoM(2));
-    // b.segment<2>(1) =
-    //     (kp_R_ * oriErr + kd_omega_ * (-robot_->omega_B)).segment<2>(0);
-    b.segment<3>(1) = kp_R_ * oriErr + kd_omega_ * (-robot_->omega_B);
+    b.segment<3>(1) =
+        kp_R_ * oriErr
+        + kd_omega_ * (input_.omega_B_d - robot_->omega_B)
+        + input_.omegadot_B_ff;
+
+    return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
+}
+
+WBCTask WeightedWBC::formulateCentroidalForceTask()
+{
+    Eigen::MatrixXd a = Eigen::MatrixXd::Zero(DOF6, kNumDecisionVars);
+    Eigen::VectorXd b = Eigen::VectorXd::Zero(DOF6);
+
+    const Eigen::Matrix3d errorMatrix = input_.R_B_d * robot_->R_B.transpose();
+    const Eigen::AngleAxisd errorAngleAxis(errorMatrix);
+    Eigen::Vector3d oriErr = errorAngleAxis.angle() * errorAngleAxis.axis();
+    if (!oriErr.allFinite()) {
+        oriErr.setZero();
+    }
+
+    const Eigen::Vector3d pddot_CoM_d =
+        input_.pddot_CoM_ff
+        + kp_CoM_ * (input_.p_CoM_d - robot_->p_CoM)
+        + kd_CoM_ * (input_.pdot_CoM_d - robot_->pdot_CoM);
+    const Eigen::Vector3d gravity(0.0, 0.0, robot_->getGravityConst());
+    Eigen::Vector3d desired_force =
+        robot_->getTotalMass() * (pddot_CoM_d + gravity);
+
+    Eigen::Matrix3d I_G = Eigen::Matrix3d::Zero();
+    for (int i = 0; i < static_cast<int>(mahru::NO_OF_BODY); ++i) {
+        I_G += robot_->I_G_BCS[i]
+             - robot_->body[i].get_mass()
+               * Skew(robot_->rpos_lnk[i]) * Skew(robot_->rpos_lnk[i]);
+    }
+    const Eigen::Vector3d omegadot_B_d =
+        input_.omegadot_B_ff
+        + kp_R_ * oriErr
+        + kd_omega_ * (input_.omega_B_d - robot_->omega_B);
+    Eigen::Vector3d desired_moment = I_G * omegadot_B_d;
+
+    Eigen::Vector3d nominal_force = Eigen::Vector3d::Zero();
+    Eigen::Vector3d nominal_moment = Eigen::Vector3d::Zero();
+    for (int contact = 0; contact < ConvexMpc::kNumContacts; ++contact) {
+        if (state_->ctrl.contact_schedule(contact, 0) == 0) {
+            continue;
+        }
+
+        const int col = mahru::nDoF + DOF3 * contact;
+        const Eigen::Vector3d r_CoM_to_contact =
+            state_->fbk.p_C[contact] - robot_->p_CoM;
+
+        a.block<DOF3, DOF3>(0, col).setIdentity();
+        a.block<DOF3, DOF3>(DOF3, col) = Skew(r_CoM_to_contact);
+
+        const Eigen::Vector3d nominal_grf =
+            input_.grfs_mpc.segment<DOF3>(DOF3 * contact);
+        nominal_force += nominal_grf;
+        nominal_moment += r_CoM_to_contact.cross(nominal_grf);
+    }
+
+    if (!desired_force.allFinite()) {
+        desired_force.setZero();
+    }
+    if (!desired_moment.allFinite()) {
+        desired_moment.setZero();
+    }
+
+    b.segment<DOF3>(0) = desired_force - nominal_force;
+    b.segment<DOF3>(DOF3) = desired_moment - nominal_moment;
 
     return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
 }
@@ -403,6 +473,9 @@ void WeightedWBC::loadWeightGain()
         W_centroidal_ = yaml_node["W_Centroidal"].as<double>();
         if (yaml_node["W_CenAngMom_Compen"]) {
             W_CenAngMom_Compen_ = yaml_node["W_CenAngMom_Compen"].as<double>();
+        }
+        if (yaml_node["W_CentroidalForce"]) {
+            W_centroidal_force_ = yaml_node["W_CentroidalForce"].as<double>();
         }
         if (yaml_node["W_wheelAccel"]) {
             W_wheelAccel_ = yaml_node["W_wheelAccel"].as<double>();

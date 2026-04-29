@@ -24,13 +24,17 @@ public:
             Eigen::Matrix<double, mahru::num_act_joint, 1>::Zero();
         Eigen::Vector3d p_CoM_d = Eigen::Vector3d::Zero();
         Eigen::Vector3d pdot_CoM_d = Eigen::Vector3d::Zero();
+        Eigen::Vector3d pddot_CoM_ff = Eigen::Vector3d::Zero();
         Eigen::Vector3d lin_vel_d = Eigen::Vector3d::Zero();
+        Eigen::Vector3d omega_B_d = Eigen::Vector3d::Zero();
+        Eigen::Vector3d omegadot_B_ff = Eigen::Vector3d::Zero();
         Eigen::Matrix3d R_B_d = Eigen::Matrix3d::Identity();
         Eigen::Matrix<double, ConvexMpc::kForceDim, 1> grfs_mpc =
             Eigen::Matrix<double, ConvexMpc::kForceDim, 1>::Zero();
         int swing_contact_index = -1;
         Eigen::Vector3d p_sw_d = Eigen::Vector3d::Zero();
         Eigen::Vector3d pdot_sw_d = Eigen::Vector3d::Zero();
+        bool enable_centroidal_force_task = false;
     };
 
     struct Output {
@@ -76,7 +80,7 @@ public:
 private:
     static constexpr int kNumDecisionVars = mahru::nDoF + ConvexMpc::kForceDim;
 
-    const CARBML* robot_ = nullptr;
+    CARBML* robot_ = nullptr;
     const RobotData* state_ = nullptr;
     Input input_;
 
@@ -98,6 +102,7 @@ private:
     double W_rf_regul_ = 1e-3;
     double W_centroidal_ = 100.0;
     double W_CenAngMom_Compen_ = 1.0;
+    double W_centroidal_force_ = 1.0;
     double W_wheelAccel_ = 10.0;
     double joint_qddot_limit_ = 120.0;
 
@@ -122,6 +127,7 @@ private:
     WBCTask formulateWeightedTask();
 
     WBCTask formulateLinearMotionTask();
+    WBCTask formulateCentroidalForceTask();
     WBCTask formulateSwingLegTask(const Eigen::Matrix3d& swingKp,
                                   const Eigen::Matrix3d& swingKd);
     WBCTask formulateSlidingJointTask();

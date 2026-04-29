@@ -2,6 +2,7 @@
 
 #include "StateMachine/FSM_JPosCtrl.hpp"
 #include "StateMachine/FSM_BalanceCtrl.hpp"
+#include "StateMachine/FSM_UnicycleCtrl.hpp"
 
 #include <iostream>
 
@@ -10,6 +11,7 @@ StateMachineCtrl::StateMachineCtrl(RobotData& robot)
     state_list_.resize(StateList::NUM_STATE, nullptr);
     state_list_[StateList::FSM_JPosCtrl] = new FSM_JPosCtrlState<double>(robot);
     state_list_[StateList::FSM_BalanceCtrl] = new FSM_BalanceCtrlState<double>(robot);
+    state_list_[StateList::FSM_UnicycleCtrl] = new FSM_UnicycleCtrlState<double>(robot);
 
     current_state_ = nullptr;
     next_state_ = nullptr;
@@ -39,7 +41,7 @@ void StateMachineCtrl::runState()
         first_run_ = false;
     }
     if(count == 3001) {
-        current_state_ = state_list_[StateList::FSM_BalanceCtrl];
+        current_state_ = state_list_[StateList::FSM_UnicycleCtrl];
         current_state_->onEnter();
     }
     current_state_->runNominal();

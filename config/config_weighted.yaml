@@ -5,6 +5,7 @@ W_Centroidal: 10
 W_swingLeg: 10
 W_JointAcc: 1
 W_CenAngMom_Compen: 1
+W_CentroidalForce: 100
 W_wheelAccel: 10
 W_qddot_regul: 0.001
 W_rf_regul: 0.001
