@@ -126,6 +126,14 @@ WBCTask WeightedWBC::formulateWeightedTask()
         task = task + formulateCentroidalForceTask() * W_centroidal_force_;
     }
 
+    if (input_.enable_roll_angular_momentum_task) {
+        task = task + formulateRollAngularMomentumTask() * W_roll_angular_momentum_;
+    }
+
+    if (W_torso_yaw_joint_acc_ > 0.0) {
+        task = task + formulateTorsoYawJointAccelerationTask() * W_torso_yaw_joint_acc_;
+    }
+
     if (input_.swing_contact_index >= 0 && numContactPoints_ < ConvexMpc::kNumContacts) {
         task = task
             + formulateSwingLegTask(kp_swing_, kd_swing_) * W_swingLeg_
@@ -222,6 +230,56 @@ WBCTask WeightedWBC::formulateCentroidalForceTask()
 
     b.segment<DOF3>(0) = desired_force - nominal_force;
     b.segment<DOF3>(DOF3) = desired_moment - nominal_moment;
+
+    return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
+}
+
+WBCTask WeightedWBC::formulateRollAngularMomentumTask()
+{
+    Eigen::MatrixXd a = Eigen::MatrixXd::Zero(1, kNumDecisionVars);
+    Eigen::VectorXd b = Eigen::VectorXd::Zero(1);
+
+    Eigen::Vector3d roll_axis = input_.roll_angular_momentum_axis;
+    if (roll_axis.norm() < 1e-6 || !roll_axis.allFinite()) {
+        roll_axis = Eigen::Vector3d::UnitX();
+    } else {
+        roll_axis.normalize();
+    }
+
+    a.block(0, 0, 1, mahru::nDoF) = roll_axis.transpose() * robot_->Ar_CoM;
+
+    // Do not let torso yaw or arms generate this roll-momentum objective.
+    for (int joint = 0; joint <= 8; ++joint) {
+        a(0, DOF6 + joint) = 0.0;
+    }
+
+    b(0) = input_.roll_angular_momentum_rate_d
+        - (roll_axis.transpose() * robot_->Adotr_CoM * robot_->xidot)(0);
+
+    if (!std::isfinite(b(0))) {
+        b(0) = 0.0;
+    }
+
+    return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
+}
+
+WBCTask WeightedWBC::formulateTorsoYawJointAccelerationTask()
+{
+    if (torso_yaw_joint_idx_ < 0
+        || torso_yaw_joint_idx_ >= static_cast<int>(mahru::num_act_joint)) {
+        return WBCTask(kNumDecisionVars);
+    }
+
+    Eigen::MatrixXd a = Eigen::MatrixXd::Zero(1, kNumDecisionVars);
+    Eigen::VectorXd b = Eigen::VectorXd::Zero(1);
+
+    a(0, DOF6 + torso_yaw_joint_idx_) = 1.0;
+    b(0) = kp_torso_yaw_jacc_ * (torso_yaw_d_ - robot_->q(torso_yaw_joint_idx_))
+         + kd_torso_yaw_jacc_ * (-robot_->qdot(torso_yaw_joint_idx_));
+
+    if (!std::isfinite(b(0))) {
+        b(0) = 0.0;
+    }
 
     return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
 }
@@ -477,6 +535,12 @@ void WeightedWBC::loadWeightGain()
         if (yaml_node["W_CentroidalForce"]) {
             W_centroidal_force_ = yaml_node["W_CentroidalForce"].as<double>();
         }
+        if (yaml_node["W_RollAngularMomentum"]) {
+            W_roll_angular_momentum_ = yaml_node["W_RollAngularMomentum"].as<double>();
+        }
+        if (yaml_node["W_TorsoYawJointAcc"]) {
+            W_torso_yaw_joint_acc_ = yaml_node["W_TorsoYawJointAcc"].as<double>();
+        }
         if (yaml_node["W_wheelAccel"]) {
             W_wheelAccel_ = yaml_node["W_wheelAccel"].as<double>();
         }
@@ -512,6 +576,24 @@ void WeightedWBC::loadWeightGain()
             selectedJointsIdx_.push_back(yaml_node["JointAccTask"]["joints"][i].as<int>());
             kp_jacc_(i) = yaml_node["JointAccTask"]["kp"][i].as<double>();
             kd_jacc_(i) = yaml_node["JointAccTask"]["kd"][i].as<double>();
+        }
+
+        if (yaml_node["TorsoYawJointAccTask"]) {
+            const YAML::Node torso_yaw = yaml_node["TorsoYawJointAccTask"];
+            if (torso_yaw["joint"]) {
+                torso_yaw_joint_idx_ = torso_yaw["joint"].as<int>();
+            }
+            if (torso_yaw["q_d_deg"]) {
+                torso_yaw_d_ = torso_yaw["q_d_deg"].as<double>() * M_PI / 180.0;
+            } else if (torso_yaw["q_d"]) {
+                torso_yaw_d_ = torso_yaw["q_d"].as<double>();
+            }
+            if (torso_yaw["kp"]) {
+                kp_torso_yaw_jacc_ = torso_yaw["kp"].as<double>();
+            }
+            if (torso_yaw["kd"]) {
+                kd_torso_yaw_jacc_ = torso_yaw["kd"].as<double>();
+            }
         }
 
         K_f_ = yaml_node["ContactWrench"]["k_f"].as<double>();

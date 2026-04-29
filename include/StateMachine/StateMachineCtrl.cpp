@@ -40,7 +40,7 @@ void StateMachineCtrl::runState()
         count = 0;
         first_run_ = false;
     }
-    if(count == 3001) {
+    if(count == 2001) {
         current_state_ = state_list_[StateList::FSM_UnicycleCtrl];
         current_state_->onEnter();
     }

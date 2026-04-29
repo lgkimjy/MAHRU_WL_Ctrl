@@ -77,6 +77,14 @@ void SimulationBridge::UpdateSystemObserver()
     robot_.fbk.qvel.segment<3>(0) = robot_.fbk.pdot_B;
     robot_.fbk.qvel.segment<3>(3) = robot_.fbk.omega_B; // or varphi_B
     robot_.fbk.qvel.tail(num_act_joint) = robot_.fbk.jvel;
+
+    constexpr int kRobotRootBody = 1;
+    if (mjModel_->nbody > kRobotRootBody) {
+        for (int i = 0; i < 3; ++i) {
+            robot_.fbk.p_CoM(i) = mjData_->subtree_com[3 * kRobotRootBody + i];
+            robot_.fbk.pdot_CoM(i) = mjData_->subtree_linvel[3 * kRobotRootBody + i];
+        }
+    }
 }
 
 void SimulationBridge::UpdateUserInput()

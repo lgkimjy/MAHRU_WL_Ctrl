@@ -73,6 +73,13 @@ struct RobotCtrl {
     Eigen::VectorXd jpos_d;
     Eigen::VectorXd jvel_d;
     Eigen::VectorXd torq_d;
+    double roll_momentum_rate_d = 0.0;
+    double roll_momentum_rate_actual = 0.0;
+    double roll_momentum_y_err = 0.0;
+    double roll_momentum_ydot_err = 0.0;
+    double roll_momentum_height = 0.0;
+    double unicycle_state_time = 0.0;
+    double right_foot_lift_phase = 0.0;
 
     explicit RobotCtrl(int = mahru::nDoF)
         : jpos_d(Eigen::VectorXd::Zero(mahru::num_act_joint)),

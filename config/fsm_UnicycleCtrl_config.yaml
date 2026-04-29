@@ -4,10 +4,31 @@ notes:
   yaw_rate_command_enabled: false
 
 sway:
-  enabled: true
+  enabled: false
   amplitude_m: [0.0, 0.0, 0.1]
   frequency_hz: 0.2
   ramp_time: 1.0
+
+com_shift:
+  enabled: true
+  duration: 3.0
+  offset_m: [0.0, 0.0, 0.0]
+
+right_foot_lift:
+  enabled: true
+  start_time: 3.0
+  lift_height: 0.075
+  lift_duration: 0.3
+  # Optional final right-wheel target in pelvis yaw frame.
+  # If omitted, x/y are inferred at lift start and z is current relative height + lift_height.
+  # pelvis_offset_m: [0.0, -0.38, -0.72]
+
+roll_angular_momentum:
+  enabled: true
+  kp: 1400.0
+  kd: 20.0
+  max_rate: 1000.0
+  sign: 1.0
 
 Kp: [ 700,
       700, 700, 700, 700,

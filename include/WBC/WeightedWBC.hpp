@@ -35,6 +35,9 @@ public:
         Eigen::Vector3d p_sw_d = Eigen::Vector3d::Zero();
         Eigen::Vector3d pdot_sw_d = Eigen::Vector3d::Zero();
         bool enable_centroidal_force_task = false;
+        bool enable_roll_angular_momentum_task = false;
+        Eigen::Vector3d roll_angular_momentum_axis = Eigen::Vector3d::UnitX();
+        double roll_angular_momentum_rate_d = 0.0;
     };
 
     struct Output {
@@ -103,6 +106,8 @@ private:
     double W_centroidal_ = 100.0;
     double W_CenAngMom_Compen_ = 1.0;
     double W_centroidal_force_ = 1.0;
+    double W_roll_angular_momentum_ = 0.5;
+    double W_torso_yaw_joint_acc_ = 0.0;
     double W_wheelAccel_ = 10.0;
     double joint_qddot_limit_ = 120.0;
 
@@ -116,6 +121,10 @@ private:
     std::vector<int> selectedJointsIdx_;
     Eigen::VectorXd kp_jacc_;
     Eigen::VectorXd kd_jacc_;
+    int torso_yaw_joint_idx_ = 0;
+    double torso_yaw_d_ = 0.0;
+    double kp_torso_yaw_jacc_ = 100.0;
+    double kd_torso_yaw_jacc_ = 10.0;
 
     double K_f_ = 1.0;
     double K_mu_ = 0.8;
@@ -128,6 +137,8 @@ private:
 
     WBCTask formulateLinearMotionTask();
     WBCTask formulateCentroidalForceTask();
+    WBCTask formulateRollAngularMomentumTask();
+    WBCTask formulateTorsoYawJointAccelerationTask();
     WBCTask formulateSwingLegTask(const Eigen::Matrix3d& swingKp,
                                   const Eigen::Matrix3d& swingKd);
     WBCTask formulateSlidingJointTask();

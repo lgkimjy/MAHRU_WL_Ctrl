@@ -50,7 +50,39 @@ private:
     double                                  sway_frequency_hz_ = 0.1;
     double                                  sway_ramp_time_ = 1.0;
 
+    bool                                    enable_com_shift_ = true;
+    double                                  com_shift_duration_ = 3.0;
+    Eigen::Vector3d                         com_shift_offset_ = Eigen::Vector3d::Zero();
+    bool                                    com_shift_initialized_ = false;
+    Eigen::Vector3d                         com_shift_start_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d                         com_shift_target_ = Eigen::Vector3d::Zero();
+
+    bool                                    enable_right_foot_lift_ = true;
+    double                                  right_foot_lift_start_time_ = 3.0;
+    double                                  right_foot_lift_height_ = 0.04;
+    double                                  right_foot_lift_duration_ = 1.0;
+    bool                                    right_foot_lift_initialized_ = false;
+    Eigen::Vector3d                         right_wheel_lift_start_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d                         right_wheel_lift_pelvis_offset_ = Eigen::Vector3d::Zero();
+    bool                                    right_wheel_lift_pelvis_offset_configured_ = false;
+    Eigen::Vector3d                         right_wheel_lift_ref_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d                         right_wheel_lift_vel_ = Eigen::Vector3d::Zero();
+
+    bool                                    enable_roll_momentum_ref_ = true;
+    double                                  roll_momentum_kp_ = 10.0;
+    double                                  roll_momentum_kd_ = 2.0;
+    double                                  roll_momentum_max_rate_ = 35.0;
+    double                                  roll_momentum_sign_ = 1.0;
+    Eigen::Vector3d                         roll_momentum_axis_ = Eigen::Vector3d::UnitX();
+    double                                  roll_momentum_rate_d_ = 0.0;
+
     void updateSwayReference();
+    void updateCoMShiftReference();
+    void updateRightFootLiftReference();
+    void updateRollMomentumReference();
+    bool isRightFootLiftPhase() const;
+    double rightFootLiftStartTime() const;
+    Eigen::Vector3d leftSupportPoint() const;
     void computeFourContactWBC();
     void updateModel();
     void updateCommand();

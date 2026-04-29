@@ -114,6 +114,8 @@ private:
         addToBuffer("fbk/omega_B", entry.state.fbk.omega_B);
         addToBuffer("fbk/p_CoM", entry.state.fbk.p_CoM);
         addToBuffer("fbk/pdot_CoM", entry.state.fbk.pdot_CoM);
+        addContactArrayToBuffer("fbk/p_C", entry.state.fbk.p_C);
+        addContactArrayToBuffer("fbk/pdot_C", entry.state.fbk.pdot_C);
         addToBuffer("fbk/jpos", entry.state.fbk.jpos);
         addToBuffer("fbk/jvel", entry.state.fbk.jvel);
 
@@ -122,9 +124,27 @@ private:
         addToBuffer("ctrl/jpos_d", entry.state.ctrl.jpos_d);
         addToBuffer("ctrl/jvel_d", entry.state.ctrl.jvel_d);
         addToBuffer("ctrl/torq_d", entry.state.ctrl.torq_d);
+        addToBuffer("ctrl/roll_momentum_rate_d", entry.state.ctrl.roll_momentum_rate_d);
+        addToBuffer("ctrl/roll_momentum_rate_actual", entry.state.ctrl.roll_momentum_rate_actual);
+        addToBuffer("ctrl/roll_momentum_y_err", entry.state.ctrl.roll_momentum_y_err);
+        addToBuffer("ctrl/roll_momentum_ydot_err", entry.state.ctrl.roll_momentum_ydot_err);
+        addToBuffer("ctrl/roll_momentum_height", entry.state.ctrl.roll_momentum_height);
+        addToBuffer("ctrl/unicycle_state_time", entry.state.ctrl.unicycle_state_time);
+        addToBuffer("ctrl/right_foot_lift_phase", entry.state.ctrl.right_foot_lift_phase);
 
         addToBuffer("param/Kp", entry.state.param.Kp);
         addToBuffer("param/Kd", entry.state.param.Kd);
+    }
+
+    void addContactArrayToBuffer(
+        const std::string& name,
+        const std::array<Eigen::Vector3d, 4>& value)
+    {
+        Eigen::Matrix<double, 4, 3> data;
+        for (int i = 0; i < 4; ++i) {
+            data.row(i) = value[i].transpose();
+        }
+        addToBuffer(name, data);
     }
 
     template <typename Derived>
