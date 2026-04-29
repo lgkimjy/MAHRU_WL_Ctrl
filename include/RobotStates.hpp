@@ -67,6 +67,8 @@ struct RobotFeedback {
 struct RobotCtrl {
     Eigen::Vector3d lin_vel_d = Eigen::Vector3d::Zero(); // desired linear velocity w.r.t. base frame
     Eigen::Vector3d ang_vel_d = Eigen::Vector3d::Zero(); // desired angular velocity w.r.t. base frame
+    int gait_type = 0; // 0: stand, 1: line walk, 2: point walk, 3: line walk DSP, 4: point walk DSP, 7: slide
+    Eigen::Matrix<int, 4, 10> contact_schedule = Eigen::Matrix<int, 4, 10>::Ones();
 
     Eigen::VectorXd jpos_d;
     Eigen::VectorXd jvel_d;

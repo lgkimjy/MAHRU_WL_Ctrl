@@ -38,7 +38,7 @@ void StateMachineCtrl::runState()
         count = 0;
         first_run_ = false;
     }
-    if(count > 3000 && count < 3002) {
+    if(count == 3001) {
         current_state_ = state_list_[StateList::FSM_BalanceCtrl];
         current_state_->onEnter();
     }

@@ -82,7 +82,8 @@ void SimulationBridge::UpdateSystemObserver()
 void SimulationBridge::UpdateUserInput()
 {
     robot_.ctrl.lin_vel_d = mjSim_->lin_vel_d;
-    robot_.ctrl.ang_vel_d = mjSim_->ang_vel_d;    
+    robot_.ctrl.ang_vel_d = mjSim_->ang_vel_d;
+    robot_.ctrl.gait_type = mjSim_->gait_type;
 }
 
 void SimulationBridge::UpdateControlCommand()

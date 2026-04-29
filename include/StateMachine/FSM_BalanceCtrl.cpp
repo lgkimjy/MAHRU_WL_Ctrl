@@ -6,6 +6,13 @@
 #include <string>
 #include <yaml-cpp/yaml.h>
 
+namespace {
+
+constexpr double kControlDt = 0.001;
+constexpr double kMpcDt = 0.05;
+
+}  // namespace
+
 template <typename T>
 FSM_BalanceCtrlState<T>::FSM_BalanceCtrlState(RobotData& robot) :
     robot_data_(&robot)
@@ -40,6 +47,9 @@ void FSM_BalanceCtrlState<T>::onEnter()
     torq_mpc_.setZero();
     grf_mpc_.setZero();
     mpc_time_ = 0.0;
+    mpc_dt_ = kMpcDt;
+    loco_ctrl_.reset(robot_data_->ctrl.gait_type);
+    robot_data_->ctrl.contact_schedule.setOnes();
 
     readConfig(CMAKE_SOURCE_DIR "/config/fsm_BalanceCtrl_config.yaml");
     this->state_time = 0.0;
@@ -54,14 +64,25 @@ void FSM_BalanceCtrlState<T>::runNominal()
     updateVisualization();
 
     this->state_time += 0.001;
+    loco_ctrl_.step();
 }
 
 template <typename T>
 void FSM_BalanceCtrlState<T>::computeConvexMPC()
 {
-    constexpr double kControlDt = 0.001;
+    const bool should_update_mpc = mpc_time_ <= 0.0;
 
-    if (mpc_time_ <= 0.0) {
+    if (should_update_mpc) {
+        const bool gait_changed = loco_ctrl_.updateGaitSchedule(
+            robot_data_->ctrl.gait_type,
+            robot_data_->ctrl.contact_schedule);
+        if (gait_changed) {
+            loco_ctrl_.resetMpc();
+        }
+    }
+    loco_ctrl_.updateSwingFoot(*robot_data_, arbml_->p_CoM, arbml_->pdot_CoM);
+
+    if (should_update_mpc) {
         ConvexMpc::Input mpc_input;
         mpc_input.mass = arbml_->getTotalMass();
         mpc_input.R_B = arbml_->R_B;
@@ -89,10 +110,11 @@ void FSM_BalanceCtrlState<T>::computeConvexMPC()
         for (int i = 0; i < ConvexMpc::kNumContacts; ++i) {
             mpc_input.contact_pos_abs.col(i) = robot_data_->fbk.p_C[i] - arbml_->p_CoM;
         }
+        mpc_input.contact_schedule = robot_data_->ctrl.contact_schedule;
 
-        is_mpc_solved_ = convex_mpc_.update(mpc_input, mpc_dt_);
+        is_mpc_solved_ = loco_ctrl_.compute_grf(mpc_input, mpc_dt_);
         if (is_mpc_solved_) {
-            grf_mpc_ = convex_mpc_.groundReactionForce();
+            grf_mpc_ = loco_ctrl_.groundReactionForce();
         }
     }
 
@@ -115,10 +137,43 @@ void FSM_BalanceCtrlState<T>::computeConvexMPC()
         }
     }
 
+    applySwingTask();
+
+    for (int i = 0; i < torq_mpc_.size(); ++i) {
+        if (!std::isfinite(torq_mpc_(i))) {
+            torq_mpc_(i) = robot_data_->ctrl.torq_d(i);
+        }
+    }
+
     mpc_time_ += kControlDt;
     if (mpc_time_ > mpc_dt_) {
         mpc_time_ = 0.0;
     }
+}
+
+template <typename T>
+void FSM_BalanceCtrlState<T>::applySwingTask()
+{
+    const int swing_contact_index = loco_ctrl_.swingContactIndex();
+    if (swing_contact_index < 0) {
+        return;
+    }
+
+    constexpr double kSwingKp = 2400.0;
+    constexpr double kSwingKd = 140.0;
+    constexpr double kMaxSwingForce = 1800.0;
+
+    Eigen::Vector3d swing_force =
+        kSwingKp * (loco_ctrl_.swingPosition() - robot_data_->fbk.p_C[swing_contact_index])
+        + kSwingKd * (loco_ctrl_.swingVelocity() - robot_data_->fbk.pdot_C[swing_contact_index]);
+
+    for (int i = 0; i < 3; ++i) {
+        swing_force(i) = std::clamp(swing_force(i), -kMaxSwingForce, kMaxSwingForce);
+    }
+
+    const Eigen::Matrix<double, mahru::nDoF, 1> generalized_torque =
+        robot_data_->fbk.Jp_C[swing_contact_index].transpose() * swing_force;
+    torq_mpc_ += generalized_torque.tail(mahru::num_act_joint);
 }
 
 template <typename T>
@@ -362,8 +417,8 @@ void FSM_BalanceCtrlState<T>::updateVisualization()
     // );
 
     viz_->clearPrefix("BalanceCtrl/MPC_Horizon");
-    if (is_mpc_solved_ && convex_mpc_.predictedStates().allFinite()) {
-        const Eigen::VectorXd horizon_states = convex_mpc_.predictedStates();
+    if (is_mpc_solved_ && loco_ctrl_.predictedStates().allFinite()) {
+        const Eigen::VectorXd horizon_states = loco_ctrl_.predictedStates();
         viz_->mpcHorizon("BalanceCtrl/MPC_Horizon/path",
             horizon_states,
             ConvexMpc::kPlanHorizon,
@@ -375,7 +430,7 @@ void FSM_BalanceCtrlState<T>::updateVisualization()
 
         for (int i = 0; i < ConvexMpc::kPlanHorizon; ++i) {
             const Eigen::Vector3d pos =
-                convex_mpc_.predictedStates().segment<3>(i * ConvexMpc::kStateDim + 3);
+                horizon_states.segment<3>(i * ConvexMpc::kStateDim + 3);
             viz_->sphere("BalanceCtrl/MPC_Horizon/point_" + std::to_string(i),
                 pos,
                 0.012,
@@ -393,6 +448,71 @@ void FSM_BalanceCtrlState<T>::updateVisualization()
         500, 4.0, {1.0f, 0.5f, 0.5f, 1.0f}
     );
 
+    viz_->clearPrefix("BalanceCtrl/Swing/preview");
+    const int swing_contact_index = loco_ctrl_.swingContactIndex();
+    if (swing_contact_index >= 0) {
+        const bool is_right_swing = swing_contact_index == 1;
+        const std::string swing_side = is_right_swing ? "Right" : "Left";
+        const std::vector<Eigen::Vector3d>& swing_preview = loco_ctrl_.swingPreview();
+        const mujoco::TrajVizUtil::Color horizon_color =
+            is_right_swing
+                ? mujoco::TrajVizUtil::Color{1.0f, 0.45f, 0.15f, 0.9f}
+                : mujoco::TrajVizUtil::Color{0.15f, 0.65f, 1.0f, 0.9f};
+        const mujoco::TrajVizUtil::Color desired_color =
+            is_right_swing
+                ? mujoco::TrajVizUtil::Color{1.0f, 0.55f, 0.2f, 1.0f}
+                : mujoco::TrajVizUtil::Color{0.2f, 0.75f, 1.0f, 1.0f};
+        const mujoco::TrajVizUtil::Color target_color =
+            is_right_swing
+                ? mujoco::TrajVizUtil::Color{1.0f, 0.15f, 0.05f, 1.0f}
+                : mujoco::TrajVizUtil::Color{0.05f, 0.25f, 1.0f, 1.0f};
+
+        viz_->horizon("BalanceCtrl/Swing/preview/" + swing_side + "/horizon",
+            swing_preview,
+            3.0,
+            horizon_color
+        );
+        for (int i = 0; i < static_cast<int>(swing_preview.size()); ++i) {
+            const std::string point_name =
+                "BalanceCtrl/Swing/preview/"
+                + swing_side
+                + "/horizon_point_"
+                + std::to_string(i);
+            viz_->sphere(point_name,
+                swing_preview[i],
+                0.012,
+                horizon_color
+            );
+        }
+        viz_->sphere("BalanceCtrl/Swing/preview/" + swing_side + "/current",
+            robot_data_->fbk.p_C[swing_contact_index],
+            0.018,
+            {1.0f, 1.0f, 1.0f, 1.0f}
+        );
+        viz_->sphere("BalanceCtrl/Swing/preview/" + swing_side + "/desired",
+            loco_ctrl_.swingPosition(),
+            0.018,
+            desired_color
+        );
+        viz_->sphere("BalanceCtrl/Swing/preview/" + swing_side + "/target",
+            loco_ctrl_.swingTarget(),
+            0.022,
+            target_color
+        );
+        viz_->line("BalanceCtrl/Swing/preview/" + swing_side + "/error",
+            robot_data_->fbk.p_C[swing_contact_index],
+            loco_ctrl_.swingPosition(),
+            1.5,
+            {1.0f, 1.0f, 1.0f, 0.65f}
+        );
+        viz_->pushTrail("BalanceCtrl/Swing/" + swing_side + "/desired_trail",
+            loco_ctrl_.swingPosition(),
+            250,
+            2.0,
+            horizon_color
+        );
+    }
+
     Eigen::Vector3d zmp_pos = arbml_->pos_ZMP;
     zmp_pos.z() = 0.0;
     viz_->cylinder("BalanceCtrl/ZMP", zmp_pos,
@@ -408,11 +528,11 @@ void FSM_BalanceCtrlState<T>::updateVisualization()
     //     );
     // }
 
-    for(int i = 0; i < 4; i++) {
-        viz_->sphere("BalanceCtrl/Contact_" + std::to_string(i) + "_pos",
-            robot_data_->fbk.p_C[i], 0.02, {0.0f, 0.3f, 0.3f, 0.8f}
-        );
-    }
+    // for(int i = 0; i < 4; i++) {
+    //     viz_->sphere("BalanceCtrl/Contact_" + std::to_string(i) + "_pos",
+    //         robot_data_->fbk.p_C[i], 0.02, {0.0f, 0.3f, 0.3f, 0.8f}
+    //     );
+    // }
 }
 
 template <typename T>

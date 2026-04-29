@@ -327,8 +327,9 @@ class Simulate {
 
   //////////////// JY Code ////////////////
   TrajVizUtil traj_viz_util_;
-  Eigen::Vector3d lin_vel_d;
-  Eigen::Vector3d ang_vel_d;
+  Eigen::Vector3d lin_vel_d = {0, 0, 0};
+  Eigen::Vector3d ang_vel_d = {0, 0, 0};
+  int gait_type = 0;
 
   mjuiDef defCmd[18] = {
     {mjITEM_SECTION,    "Command", mjPRESERVE, nullptr, "AB"},
@@ -341,6 +342,7 @@ class Simulate {
     {mjITEM_SLIDERNUM,  "ang_vel_d,p", 2, &this->ang_vel_d[1], "-0.3 0.3"},
     {mjITEM_SLIDERNUM,  "ang_vel_d,y", 2, &this->ang_vel_d[2], "-0.3 0.3"},
     {mjITEM_SEPARATOR,  "Gait Selection", 1},
+    {mjITEM_SELECT,     "", 2, &this->gait_type, "Stand\nLineWalk (SSP)\nPointWalk (SSP)\nLineWalk (DSP)\nPointWalk (DSP)\nJumping\nLeaping\nSliding"},
     {mjITEM_END}
   };
   void MakeCommandSection();

@@ -163,6 +163,8 @@ void ConvexMpc::reset()
     if (solver_.isInitialized()) {
         solver_.clearSolver();
     }
+    solver_.data()->clearHessianMatrix();
+    solver_.data()->clearLinearConstraintsMatrix();
     solver_initialized_ = false;
 }
 
@@ -202,8 +204,12 @@ bool ConvexMpc::update(const Input& input, double dt)
 
     calculateQPMats(input);
 
-    Eigen::Matrix<double, kNumDecisionVars, kNumDecisionVars> dense_hessian =
-        B_qp_.transpose() * Q_ * B_qp_ + R_.toDenseMatrix();
+    Eigen::MatrixXd weighted_b_qp = B_qp_;
+    weighted_b_qp.array().colwise() *= Q_.diagonal().array();
+
+    Eigen::MatrixXd dense_hessian(kNumDecisionVars, kNumDecisionVars);
+    dense_hessian.noalias() = B_qp_.transpose() * weighted_b_qp;
+    dense_hessian.diagonal() += R_.diagonal();
     dense_hessian = 0.5 * (dense_hessian + dense_hessian.transpose());
     dense_hessian.diagonal().array() += 1e-9;
     const Eigen::SparseMatrix<double> hessian = sparseFromDense(dense_hessian);
@@ -211,7 +217,7 @@ bool ConvexMpc::update(const Input& input, double dt)
     const Eigen::Matrix<double, kStateDim * kPlanHorizon, 1> state_error =
         A_qp_ * mpc_states - mpc_states_d;
     const Eigen::Matrix<double, kNumDecisionVars, 1> gradient =
-        B_qp_.transpose() * Q_ * state_error;
+        B_qp_.transpose() * (Q_.diagonal().array() * state_error.array()).matrix();
 
     Eigen::Matrix<double, kNumDecisionVars, 1> solution;
     if (!solveQP(hessian, gradient, solution)) {

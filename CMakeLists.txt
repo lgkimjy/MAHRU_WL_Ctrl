@@ -29,6 +29,7 @@ find_package(Threads REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(HDF5 REQUIRED COMPONENTS C HL CXX)
 find_package(yaml-cpp CONFIG REQUIRED)
+find_package(eigen-quadprog REQUIRED)
 include(FetchContent)
 find_package(OsqpEigen QUIET)
 if(NOT OsqpEigen_FOUND)
@@ -80,6 +81,9 @@ set(ARBML_SRC
 
 set(MPC_SRC
   include/Controller/ConvexMPC/ConvexMpc.cpp
+  include/Controller/ConvexMPC/GaitGenerator.cpp
+  include/Controller/ConvexMPC/LocoCtrl.cpp
+  include/Trajectory/OnlineOptTraj.cpp
 )
 
 add_executable(mahru_ctrl
@@ -103,6 +107,7 @@ target_include_directories(mahru_ctrl PRIVATE
 target_link_libraries(mahru_ctrl PRIVATE
   Eigen3::Eigen
   OsqpEigen::OsqpEigen
+  eigen-quadprog::eigen-quadprog
   yaml-cpp::yaml-cpp
   mujoco::libsimulate
   mujoco::mujoco

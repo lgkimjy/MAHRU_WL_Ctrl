@@ -28,7 +28,7 @@ SimulationInterface::SimulationInterface(const std::string& scene_file):
 
     // uncomment this line, if wanted to change the spawn window size
     if (GLFWwindow* window = glfwGetCurrentContext()) {
-        glfwSetWindowSize(window, 4000, 3000);  // window size
+        glfwSetWindowSize(window, 2500, 1750);  // window size
     }
     
     mjSim_ = new mj::Simulate(
