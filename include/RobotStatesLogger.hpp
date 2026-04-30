@@ -124,13 +124,34 @@ private:
         addToBuffer("ctrl/jpos_d", entry.state.ctrl.jpos_d);
         addToBuffer("ctrl/jvel_d", entry.state.ctrl.jvel_d);
         addToBuffer("ctrl/torq_d", entry.state.ctrl.torq_d);
+        addToBuffer("ctrl/p_CoM_d", entry.state.ctrl.p_CoM_d);
+        addToBuffer("ctrl/pdot_CoM_d", entry.state.ctrl.pdot_CoM_d);
         addToBuffer("ctrl/roll_momentum_rate_d", entry.state.ctrl.roll_momentum_rate_d);
         addToBuffer("ctrl/roll_momentum_rate_actual", entry.state.ctrl.roll_momentum_rate_actual);
+        addToBuffer("ctrl/roll_momentum_rate_wbc", entry.state.ctrl.roll_momentum_rate_wbc);
+        addToBuffer("ctrl/roll_momentum_rate_wbc_error", entry.state.ctrl.roll_momentum_rate_wbc_error);
+        addToBuffer("ctrl/swing_leg_roll_momentum_rate_d",
+                    entry.state.ctrl.swing_leg_roll_momentum_rate_d);
+        addToBuffer("ctrl/swing_leg_roll_momentum_rate_wbc",
+                    entry.state.ctrl.swing_leg_roll_momentum_rate_wbc);
         addToBuffer("ctrl/roll_momentum_y_err", entry.state.ctrl.roll_momentum_y_err);
         addToBuffer("ctrl/roll_momentum_ydot_err", entry.state.ctrl.roll_momentum_ydot_err);
         addToBuffer("ctrl/roll_momentum_height", entry.state.ctrl.roll_momentum_height);
         addToBuffer("ctrl/unicycle_state_time", entry.state.ctrl.unicycle_state_time);
         addToBuffer("ctrl/right_foot_lift_phase", entry.state.ctrl.right_foot_lift_phase);
+        addToBuffer("ctrl/swing_leg_reaction_offset", entry.state.ctrl.swing_leg_reaction_offset);
+        addToBuffer("ctrl/swing_leg_reaction_vel", entry.state.ctrl.swing_leg_reaction_vel);
+        addToBuffer("ctrl/swing_lateral_acceleration_d",
+                    entry.state.ctrl.swing_lateral_acceleration_d);
+        addToBuffer("ctrl/single_wheel_pitch", entry.state.ctrl.single_wheel_pitch);
+        addToBuffer("ctrl/single_wheel_pitch_rate", entry.state.ctrl.single_wheel_pitch_rate);
+        addToBuffer("ctrl/single_wheel_lin_vel_d", entry.state.ctrl.single_wheel_lin_vel_d);
+        addToBuffer("ctrl/single_wheel_lin_acc_d", entry.state.ctrl.single_wheel_lin_acc_d);
+        addToBuffer("ctrl/single_wheel_com_offset_d", entry.state.ctrl.single_wheel_com_offset_d);
+        addToBuffer("ctrl/single_wheel_phase", entry.state.ctrl.single_wheel_phase);
+        addToBuffer("ctrl/single_wheel_stance_qdot_d", entry.state.ctrl.single_wheel_stance_qdot_d);
+        addToBuffer("ctrl/single_wheel_stance_qdot", entry.state.ctrl.single_wheel_stance_qdot);
+        addToBuffer("ctrl/single_wheel_lateral_vel", entry.state.ctrl.single_wheel_lateral_vel);
 
         addToBuffer("param/Kp", entry.state.param.Kp);
         addToBuffer("param/Kd", entry.state.param.Kd);

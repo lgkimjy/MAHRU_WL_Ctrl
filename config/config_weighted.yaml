@@ -1,14 +1,16 @@
 ##############################
 ### WBC Weight Gain Parameters
 ##############################
-W_Centroidal: 10
+W_Centroidal: 25
 W_swingLeg: 50
-W_JointAcc: 1
+W_JointAcc: 60
 W_CenAngMom_Compen: 1
-W_CentroidalForce: 100
-W_RollAngularMomentum: 1500
-W_TorsoYawJointAcc: 100
-W_wheelAccel: 10
+W_CentroidalForce: 200
+W_RollAngularMomentum: 500
+W_SwingLegRollMomentum: 7000
+W_SwingLateralAccel: 1000
+W_TorsoYawJointAcc: 7000
+W_wheelAccel: 100
 W_qddot_regul: 0.0001
 W_rf_regul: 0.0001
 W_tau_regul: 0.0001
@@ -20,25 +22,25 @@ JointAccLimit:
 ### Tracking Tasks PD Gain Parameters
 ##############################
 CentroidalTask:
-  com_kp: [500, 500, 500]
-  com_kd: [2, 2, 15]
-  orientation_kp: [1500, 1500, 10]
-  orientation_kd: [10, 10, 1]
+  com_kp: [160, 160, 500]
+  com_kd: [10, 10, 15]
+  orientation_kp: [50, 200, 10]
+  orientation_kd: [10, 20, 1]
 
 SwingTask:
-  kp: [1000, 1000, 1000]
-  kd: [40, 40, 40]
+  kp: [1000, 300, 1000]
+  kd: [40, 2, 40]
 
 JointAccTask:
   joints: [0, 1, 2, 3, 4, 5, 6, 7, 8]
-  kp: [100, 100, 100, 100, 100, 100, 100, 100, 100]
-  kd: [10, 10, 10, 10, 10, 10, 10, 10, 10]
+  kp: [300, 300, 300, 300, 300, 300, 300, 300, 300]
+  kd: [30, 30, 30, 30, 30, 30, 30, 30, 30]
 
 TorsoYawJointAccTask:
   joint: 0
   q_d_deg: 0.0
-  kp: 200
-  kd: 20
+  kp: 100
+  kd: 10
 
 ##############################
 ### Constraint Parameters

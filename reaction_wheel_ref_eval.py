@@ -111,29 +111,37 @@ with h5py.File(log_file_path, "r") as f:
     time = _read_optional_ds(f, "time")
     hdot_ref = _read_ds(f, "ctrl/roll_momentum_rate_d")
     hdot_humanoid = _read_optional_ds(f, "ctrl/roll_momentum_rate_actual")
+    hdot_wbc = _read_optional_ds(f, "ctrl/roll_momentum_rate_wbc")
     p_base = _read_ds(f, "fbk/p_B")
     R_base = _read_ds(f, "fbk/R_B")
     p_com = _read_optional_ds(f, "fbk/p_CoM")
     p_contact = _read_optional_ds(f, "fbk/p_C")
+    single_wheel_phase = _read_optional_ds(f, "ctrl/single_wheel_phase")
 
 lengths = [hdot_ref.shape[0], p_base.shape[0], R_base.shape[0]]
 if time is not None:
     lengths.append(time.shape[0])
 if hdot_humanoid is not None:
     lengths.append(hdot_humanoid.shape[0])
+if hdot_wbc is not None:
+    lengths.append(hdot_wbc.shape[0])
 if p_com is not None:
     lengths.append(p_com.shape[0])
 if p_contact is not None:
     lengths.append(p_contact.shape[0])
+if single_wheel_phase is not None:
+    lengths.append(single_wheel_phase.shape[0])
 T = min(lengths)
 
 time = np.arange(T).reshape(-1, 1) if time is None else time[:T]
 hdot_ref = hdot_ref[:T]
 hdot_humanoid = None if hdot_humanoid is None else hdot_humanoid[:T]
+hdot_wbc = None if hdot_wbc is None else hdot_wbc[:T]
 p_base = p_base[:T]
 R_base = R_base[:T]
 p_com = None if p_com is None else p_com[:T]
 p_contact = None if p_contact is None else p_contact[:T]
+single_wheel_phase = None if single_wheel_phase is None else single_wheel_phase[:T]
 
 start_idx = args.initial_timestamp
 if args.end_timestamp is not None:
@@ -145,10 +153,13 @@ time = time[start_idx:end_idx].reshape(-1)
 hdot_ref = hdot_ref[start_idx:end_idx, 0]
 if hdot_humanoid is not None:
     hdot_humanoid = hdot_humanoid[start_idx:end_idx, 0]
+if hdot_wbc is not None:
+    hdot_wbc = hdot_wbc[start_idx:end_idx, 0]
 p_base = p_base[start_idx:end_idx]
 R_base = R_base[start_idx:end_idx]
 p_com = None if p_com is None else p_com[start_idx:end_idx]
 p_contact = None if p_contact is None else p_contact[start_idx:end_idx]
+single_wheel_phase = None if single_wheel_phase is None else single_wheel_phase[start_idx:end_idx]
 
 kp, kd, max_rate, sign = _read_roll_params()
 mass = _read_total_mass()
@@ -159,7 +170,13 @@ rpy = _rpy_from_rotation(R)
 support_y = np.zeros_like(time)
 if p_contact is not None and p_contact.shape[1] >= 12:
     contacts = p_contact.reshape(p_contact.shape[0], 4, 3, order="F")
-    support_y = 0.5 * (contacts[:, 2, 1] + contacts[:, 3, 1])
+    line_support_y = 0.5 * (contacts[:, 2, 1] + contacts[:, 3, 1])
+    wheel_support_y = contacts[:, 3, 1]
+    if single_wheel_phase is not None:
+        phase = single_wheel_phase.reshape(-1)
+        support_y = np.where(phase > 0.5, wheel_support_y, line_support_y)
+    else:
+        support_y = line_support_y
 
 fig = plt.figure(figsize=(12, 8))
 gs = GridSpec(3, 1, height_ratios=[3, 2, 2])
@@ -191,6 +208,15 @@ else:
         "missing ctrl/roll_momentum_rate_actual in this log",
         transform=axes[0].transAxes,
         color=color_cycle[1],
+    )
+if hdot_wbc is not None:
+    axes[0].plot(
+        time,
+        hdot_wbc,
+        linestyle=":",
+        color=color_cycle[7 % len(color_cycle)],
+        linewidth=2,
+        label=r"WBC predicted $\dot{h}_{roll}$",
     )
 axes[0].axhline(max_rate, linestyle="--", color="k", linewidth=1, alpha=0.55)
 axes[0].axhline(-max_rate, linestyle="--", color="k", linewidth=1, alpha=0.55)

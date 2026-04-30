@@ -60,7 +60,7 @@ protected:
     virtual void UpdateUserInput() = 0;
     // double _ctrl_time = 0.0;
 public:
-    explicit SimulationInterface(const std::string& scene_file);
+    explicit SimulationInterface(const std::string& scene_file, bool use_gui = true);
     ~SimulationInterface();
 
     std::string filename_storage_;

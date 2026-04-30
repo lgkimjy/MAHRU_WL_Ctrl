@@ -169,6 +169,7 @@
 													mass="0.325331" diaginertia="0.00221643 0.00204299 0.000338785"/>
 								<geom name="RA" type="mesh" mesh="RA4" rgba="0.8438 0.8555 0.8672 1"/>	<!-- Chrome Silver -->
 								<geom name="RECover" type="mesh" mesh="AMCover" pos="0 0 -0.041" euler="0 1.57 0" rgba="0.1133 0.1289 0.1797 1"/>
+								<geom name='REE_sphere' type='sphere' pos='0 0.24 0' mass="5" size='0.012' rgba='1 0 0 1'/>
 								<site name="RArm_EE" type="sphere" pos="0 0.24 0" size="0.012" rgba="1 0 0 1"/>
 							</body>
 						</body>
@@ -202,6 +203,7 @@
 													mass="0.325331" diaginertia="0.00221643 0.00204299 0.000338785"/>
 								<geom name="LA" type="mesh" mesh="LA4" rgba="0.8438 0.8555 0.8672 1"/>	<!-- Chrome Silver -->
 								<geom name="LECover" type="mesh" mesh="AMCover" pos="0 0 -0.041" euler="0 1.57 0" rgba="0.1133 0.1289 0.1797 1"/>
+								<geom name='LEE_sphere' type='sphere' pos='0 -0.24 0' mass="5" size='0.012' rgba='1 0 0 1'/>
 								<site name="LArm_EE" type="sphere" pos="0 -0.24 0" size="0.012" rgba="1 0 0 1"/>
 							</body>
 						</body>

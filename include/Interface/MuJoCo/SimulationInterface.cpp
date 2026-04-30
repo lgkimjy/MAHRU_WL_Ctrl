@@ -1,6 +1,6 @@
 #include "SimulationInterface.hpp"
 
-SimulationInterface::SimulationInterface(const std::string& scene_file):
+SimulationInterface::SimulationInterface(const std::string& scene_file, bool use_gui):
   filename_storage_(scene_file),
   filename_(filename_storage_.c_str())
 {
@@ -24,12 +24,16 @@ SimulationInterface::SimulationInterface(const std::string& scene_file):
     mjv_defaultOption(&opt_);
     mjv_defaultPerturb(&pert_);
 
+    if (!use_gui) {
+        return;
+    }
+
     auto platform_ui = std::make_unique<mj::GlfwAdapter>();
 
     // uncomment this line, if wanted to change the spawn window size
-    // if (GLFWwindow* window = glfwGetCurrentContext()) {
-    //     glfwSetWindowSize(window, 2500, 1750);  // window size
-    // }
+    if (GLFWwindow* window = glfwGetCurrentContext()) {
+        glfwSetWindowSize(window, 1800, 1550);  // window size
+    }
     
     mjSim_ = new mj::Simulate(
         std::move(platform_ui),

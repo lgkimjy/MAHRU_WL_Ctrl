@@ -1,6 +1,7 @@
 #include "WBC/WeightedWBC.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 
@@ -109,6 +110,8 @@ WBCTask WeightedWBC::formulateConstraints()
 {
     return formulateFloatingBaseConstraint()
         + formulateContactNormalConstraint()
+        + formulateSwingClearanceConstraint()
+        + formulateSwingLateralClearanceConstraint()
         + formulateFrictionConeConstraint()
         + formulateAccelerationLimitConstraint();
 }
@@ -119,7 +122,7 @@ WBCTask WeightedWBC::formulateWeightedTask()
 
     task = task
         + formulateJointAccelerationTask(selectedJointsIdx_, kp_jacc_, kd_jacc_) * W_JointAcc_
-        + formulateSlidingJointTask()
+        + formulateSlidingJointTask() * W_wheelAccel_
         + formulateLinearMotionTask() * W_centroidal_;
 
     if (input_.enable_centroidal_force_task) {
@@ -130,14 +133,33 @@ WBCTask WeightedWBC::formulateWeightedTask()
         task = task + formulateRollAngularMomentumTask() * W_roll_angular_momentum_;
     }
 
+    if (input_.enable_swing_leg_roll_momentum_task
+        && W_swing_leg_roll_momentum_ > 0.0) {
+        task = task
+            + formulateSwingLegRollMomentumTask() * W_swing_leg_roll_momentum_;
+    }
+
+    if (input_.enable_swing_lateral_acceleration_task
+        && W_swing_lateral_acceleration_ > 0.0) {
+        task = task
+            + formulateSwingLateralAccelerationTask() * W_swing_lateral_acceleration_;
+    }
+
     if (W_torso_yaw_joint_acc_ > 0.0) {
         task = task + formulateTorsoYawJointAccelerationTask() * W_torso_yaw_joint_acc_;
     }
 
     if (input_.swing_contact_index >= 0 && numContactPoints_ < ConvexMpc::kNumContacts) {
-        task = task
-            + formulateSwingLegTask(kp_swing_, kd_swing_) * W_swingLeg_
-            + formulateSwingWheelTask() * W_wheelAccel_;
+        task = task + formulateSwingLegTask(kp_swing_, kd_swing_) * W_swingLeg_;
+        if (input_.secondary_swing_contact_index >= 0) {
+            task = task
+                + formulateSwingContactTask(input_.secondary_swing_contact_index,
+                                            input_.p_sw2_d,
+                                            input_.pdot_sw2_d,
+                                            kp_swing_,
+                                            kd_swing_) * W_swingLeg_;
+        }
+        task = task + formulateSwingWheelTask() * W_wheelAccel_;
     }
 
     return task + formulateRegularizationTask(W_qddot_regul_, W_rf_regul_);
@@ -165,6 +187,12 @@ WBCTask WeightedWBC::formulateLinearMotionTask()
         kp_R_ * oriErr
         + kd_omega_ * (input_.omega_B_d - robot_->omega_B)
         + input_.omegadot_B_ff;
+
+    for (int i = 0; i < DOF4; ++i) {
+        const double mask = std::clamp(input_.linear_motion_task_mask(i), 0.0, 1.0);
+        a.row(i) *= mask;
+        b(i) *= mask;
+    }
 
     return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
 }
@@ -200,6 +228,7 @@ WBCTask WeightedWBC::formulateCentroidalForceTask()
         + kp_R_ * oriErr
         + kd_omega_ * (input_.omega_B_d - robot_->omega_B);
     Eigen::Vector3d desired_moment = I_G * omegadot_B_d;
+    desired_moment += input_.centroidal_moment_ff;
 
     Eigen::Vector3d nominal_force = Eigen::Vector3d::Zero();
     Eigen::Vector3d nominal_moment = Eigen::Vector3d::Zero();
@@ -231,6 +260,12 @@ WBCTask WeightedWBC::formulateCentroidalForceTask()
     b.segment<DOF3>(0) = desired_force - nominal_force;
     b.segment<DOF3>(DOF3) = desired_moment - nominal_moment;
 
+    for (int i = 0; i < DOF6; ++i) {
+        const double mask = std::clamp(input_.centroidal_force_task_mask(i), 0.0, 1.0);
+        a.row(i) *= mask;
+        b(i) *= mask;
+    }
+
     return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
 }
 
@@ -248,16 +283,97 @@ WBCTask WeightedWBC::formulateRollAngularMomentumTask()
 
     a.block(0, 0, 1, mahru::nDoF) = roll_axis.transpose() * robot_->Ar_CoM;
 
-    // Do not let torso yaw or arms generate this roll-momentum objective.
-    for (int joint = 0; joint <= 8; ++joint) {
-        a(0, DOF6 + joint) = 0.0;
-    }
-
     b(0) = input_.roll_angular_momentum_rate_d
         - (roll_axis.transpose() * robot_->Adotr_CoM * robot_->xidot)(0);
 
     if (!std::isfinite(b(0))) {
         b(0) = 0.0;
+    }
+
+    return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
+}
+
+WBCTask WeightedWBC::formulateSwingLegRollMomentumTask()
+{
+    Eigen::MatrixXd a = Eigen::MatrixXd::Zero(1, kNumDecisionVars);
+    Eigen::VectorXd b = Eigen::VectorXd::Zero(1);
+
+    Eigen::Vector3d roll_axis = input_.roll_angular_momentum_axis;
+    if (roll_axis.norm() < 1e-6 || !roll_axis.allFinite()) {
+        roll_axis = Eigen::Vector3d::UnitX();
+    } else {
+        roll_axis.normalize();
+    }
+
+    std::array<int, 4> swing_leg_joints = {};
+    if (input_.swing_contact_index == 1) {
+        swing_leg_joints = {9, 10, 11, 12};
+    } else if (input_.swing_contact_index == 3) {
+        swing_leg_joints = {14, 15, 16, 17};
+    } else {
+        return WBCTask(kNumDecisionVars);
+    }
+
+    const Eigen::Matrix<double, 1, mahru::nDoF> cmm_row =
+        roll_axis.transpose() * robot_->Ar_CoM;
+    for (const int joint : swing_leg_joints) {
+        if (joint < 0 || joint >= static_cast<int>(mahru::num_act_joint)) {
+            continue;
+        }
+        a(0, DOF6 + joint) = cmm_row(DOF6 + joint);
+    }
+
+    b(0) = input_.swing_leg_roll_momentum_rate_d;
+    if (!a.allFinite() || !std::isfinite(b(0))) {
+        return WBCTask(kNumDecisionVars);
+    }
+
+    return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
+}
+
+WBCTask WeightedWBC::formulateSwingLateralAccelerationTask()
+{
+    std::array<int, 2> swing_contacts = {
+        input_.swing_contact_index,
+        input_.secondary_swing_contact_index};
+    int rows = 0;
+    for (const int contact : swing_contacts) {
+        if (contact >= 0 && contact < ConvexMpc::kNumContacts) {
+            ++rows;
+        }
+    }
+    if (rows == 0) {
+        return WBCTask(kNumDecisionVars);
+    }
+
+    Eigen::Vector3d lateral_axis = input_.swing_lateral_acceleration_axis;
+    lateral_axis.z() = 0.0;
+    if (lateral_axis.norm() < 1e-6 || !lateral_axis.allFinite()) {
+        lateral_axis.setUnit(Y_AXIS);
+    } else {
+        lateral_axis.normalize();
+    }
+
+    Eigen::MatrixXd a = Eigen::MatrixXd::Zero(rows, kNumDecisionVars);
+    Eigen::VectorXd b = Eigen::VectorXd::Zero(rows);
+
+    int row = 0;
+    for (const int contact : swing_contacts) {
+        if (contact < 0 || contact >= ConvexMpc::kNumContacts) {
+            continue;
+        }
+
+        a.block(row, 0, 1, mahru::nDoF) =
+            lateral_axis.transpose() * state_->fbk.Jp_C[contact];
+        b(row) =
+            input_.swing_lateral_acceleration_d
+            - (lateral_axis.transpose()
+               * state_->fbk.Jdotp_C[contact]
+               * robot_->xidot)(0);
+        if (!std::isfinite(b(row))) {
+            b(row) = 0.0;
+        }
+        ++row;
     }
 
     return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
@@ -288,15 +404,34 @@ WBCTask WeightedWBC::formulateSwingLegTask(
     const Eigen::Matrix3d& swingKp,
     const Eigen::Matrix3d& swingKd)
 {
+    return formulateSwingContactTask(
+        input_.swing_contact_index,
+        input_.p_sw_d,
+        input_.pdot_sw_d,
+        swingKp,
+        swingKd);
+}
+
+WBCTask WeightedWBC::formulateSwingContactTask(
+    int contact,
+    const Eigen::Vector3d& p_d,
+    const Eigen::Vector3d& pdot_d,
+    const Eigen::Matrix3d& swingKp,
+    const Eigen::Matrix3d& swingKd)
+{
     Eigen::MatrixXd a = Eigen::MatrixXd::Zero(DOF3, kNumDecisionVars);
     Eigen::VectorXd b = Eigen::VectorXd::Zero(DOF3);
 
-    const Eigen::Vector3d accel =
-        swingKp * (input_.p_sw_d - p_sw_)
-        + swingKd * (input_.pdot_sw_d - pdot_sw_);
+    if (contact < 0 || contact >= ConvexMpc::kNumContacts) {
+        return WBCTask(kNumDecisionVars);
+    }
 
-    a.block<DOF3, mahru::nDoF>(0, 0) = Jp_sw_;
-    b = accel - Jdotp_sw_ * robot_->xidot;
+    const Eigen::Vector3d accel =
+        swingKp * (p_d - state_->fbk.p_C[contact])
+        + swingKd * (pdot_d - state_->fbk.pdot_C[contact]);
+
+    a.block<DOF3, mahru::nDoF>(0, 0) = state_->fbk.Jp_C[contact];
+    b = accel - state_->fbk.Jdotp_C[contact] * robot_->xidot;
 
     return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
 }
@@ -318,9 +453,13 @@ WBCTask WeightedWBC::formulateSlidingJointTask()
         constexpr double kSlidingKd = 40.0;
         constexpr double kMaxSlidingQddot = 120.0;
         const double desired_wheel_vel = input_.lin_vel_d(0) / kWheelRadius;
+        const double desired_wheel_acc = input_.lin_acc_d(0) / kWheelRadius;
         const double vel_error = desired_wheel_vel - robot_->qdot(wheel_joint);
         const double qddot_cmd =
-            std::clamp(kSlidingKd * vel_error, -kMaxSlidingQddot, kMaxSlidingQddot);
+            std::clamp(
+                desired_wheel_acc + kSlidingKd * vel_error,
+                -kMaxSlidingQddot,
+                kMaxSlidingQddot);
 
         a(0, DOF6 + wheel_joint) = 1.0;
         b(0) = qddot_cmd;
@@ -408,8 +547,31 @@ WBCTask WeightedWBC::formulateFloatingBaseConstraint()
 
 WBCTask WeightedWBC::formulateContactNormalConstraint()
 {
-    Eigen::MatrixXd a = Eigen::MatrixXd::Zero(numContactPoints_, kNumDecisionVars);
-    Eigen::VectorXd b = Eigen::VectorXd::Zero(numContactPoints_);
+    int lateral_rows = 0;
+    if (input_.enable_lateral_contact_constraint) {
+        for (int contact = 0; contact < ConvexMpc::kNumContacts; ++contact) {
+            if (state_->ctrl.contact_schedule(contact, 0) == 0) {
+                continue;
+            }
+            ++lateral_rows;
+        }
+    }
+    int sagittal_rows = 0;
+    if (input_.enable_sagittal_contact_constraint) {
+        for (int contact = 0; contact < ConvexMpc::kNumContacts; ++contact) {
+            if (state_->ctrl.contact_schedule(contact, 0) == 0) {
+                continue;
+            }
+            ++sagittal_rows;
+        }
+    }
+
+    Eigen::MatrixXd a =
+        Eigen::MatrixXd::Zero(
+            numContactPoints_ + lateral_rows + sagittal_rows,
+            kNumDecisionVars);
+    Eigen::VectorXd b =
+        Eigen::VectorXd::Zero(numContactPoints_ + lateral_rows + sagittal_rows);
 
     int row = 0;
     for (int contact = 0; contact < ConvexMpc::kNumContacts; ++contact) {
@@ -420,10 +582,151 @@ WBCTask WeightedWBC::formulateContactNormalConstraint()
         a.block(row, 0, 1, mahru::nDoF) = state_->fbk.Jp_C[contact].row(2);
         b(row) = -(state_->fbk.Jdotp_C[contact].row(2) * robot_->xidot)(0);
         ++row;
+
+        if (input_.enable_lateral_contact_constraint) {
+            const Eigen::Vector3d lateral_axis = state_->fbk.R_C[contact].col(Y_AXIS);
+            const Eigen::Matrix<double, 1, mahru::nDoF> J_lateral =
+                lateral_axis.transpose() * state_->fbk.Jp_C[contact];
+            const double Jdot_v_lateral =
+                (lateral_axis.transpose() * state_->fbk.Jdotp_C[contact] * robot_->xidot)(0);
+            const double lateral_vel = lateral_axis.dot(state_->fbk.pdot_C[contact]);
+
+            a.block(row, 0, 1, mahru::nDoF) = J_lateral;
+            b(row) = -Jdot_v_lateral
+                - input_.lateral_contact_kd * lateral_vel;
+            ++row;
+        }
+
+        if (input_.enable_sagittal_contact_constraint) {
+            const Eigen::Vector3d sagittal_axis = state_->fbk.R_C[contact].col(X_AXIS);
+            const Eigen::Matrix<double, 1, mahru::nDoF> J_sagittal =
+                sagittal_axis.transpose() * state_->fbk.Jp_C[contact];
+            const double Jdot_v_sagittal =
+                (sagittal_axis.transpose()
+                 * state_->fbk.Jdotp_C[contact]
+                 * robot_->xidot)(0);
+            const double sagittal_vel = sagittal_axis.dot(state_->fbk.pdot_C[contact]);
+
+            a.block(row, 0, 1, mahru::nDoF) = J_sagittal;
+            b(row) = -Jdot_v_sagittal
+                - input_.sagittal_contact_kd * sagittal_vel;
+            ++row;
+        }
     }
 
     diagnostics_.contact_normal_rows = row;
     return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
+}
+
+WBCTask WeightedWBC::formulateSwingClearanceConstraint()
+{
+    if (!input_.enable_swing_clearance_constraint) {
+        return WBCTask(kNumDecisionVars);
+    }
+
+    std::array<int, 2> swing_contacts = {
+        input_.swing_contact_index,
+        input_.secondary_swing_contact_index};
+    int rows = 0;
+    for (const int contact : swing_contacts) {
+        if (contact >= 0 && contact < ConvexMpc::kNumContacts) {
+            ++rows;
+        }
+    }
+    if (rows == 0) {
+        return WBCTask(kNumDecisionVars);
+    }
+
+    Eigen::MatrixXd d = Eigen::MatrixXd::Zero(rows, kNumDecisionVars);
+    Eigen::VectorXd f = Eigen::VectorXd::Zero(rows);
+
+    int row = 0;
+    for (const int contact : swing_contacts) {
+        if (contact < 0 || contact >= ConvexMpc::kNumContacts) {
+            continue;
+        }
+
+        const double z = state_->fbk.p_C[contact].z();
+        const double zdot = state_->fbk.pdot_C[contact].z();
+        const double jdot_v =
+            (state_->fbk.Jdotp_C[contact].row(Z_AXIS) * robot_->xidot)(0);
+        const double zddot_min = std::clamp(
+            input_.swing_clearance_kp * (input_.swing_clearance_height - z)
+            - input_.swing_clearance_kd * zdot,
+            -input_.swing_clearance_max_acc,
+            input_.swing_clearance_max_acc);
+
+        d.block(row, 0, 1, mahru::nDoF) = state_->fbk.Jp_C[contact].row(Z_AXIS);
+        f(row) = zddot_min - jdot_v;
+        ++row;
+    }
+
+    return {Eigen::MatrixXd(), Eigen::VectorXd(), d, f};
+}
+
+WBCTask WeightedWBC::formulateSwingLateralClearanceConstraint()
+{
+    if (!input_.enable_swing_lateral_clearance_constraint) {
+        return WBCTask(kNumDecisionVars);
+    }
+
+    std::array<int, 2> swing_contacts = {
+        input_.swing_contact_index,
+        input_.secondary_swing_contact_index};
+    int rows = 0;
+    for (const int contact : swing_contacts) {
+        if (contact >= 0 && contact < ConvexMpc::kNumContacts) {
+            ++rows;
+        }
+    }
+    if (rows == 0) {
+        return WBCTask(kNumDecisionVars);
+    }
+
+    Eigen::Vector3d lateral_axis = input_.swing_lateral_clearance_axis;
+    lateral_axis.z() = 0.0;
+    if (lateral_axis.norm() < 1e-6 || !lateral_axis.allFinite()) {
+        lateral_axis.setUnit(Y_AXIS);
+    } else {
+        lateral_axis.normalize();
+    }
+    const double side = input_.swing_lateral_clearance_side < 0.0 ? -1.0 : 1.0;
+
+    Eigen::MatrixXd d = Eigen::MatrixXd::Zero(rows, kNumDecisionVars);
+    Eigen::VectorXd f = Eigen::VectorXd::Zero(rows);
+    Eigen::Matrix<double, DOF3, mahru::nDoF> Jp_base =
+        Eigen::Matrix<double, DOF3, mahru::nDoF>::Zero();
+    Jp_base.block<DOF3, DOF3>(0, 0).setIdentity();
+
+    int row = 0;
+    for (const int contact : swing_contacts) {
+        if (contact < 0 || contact >= ConvexMpc::kNumContacts) {
+            continue;
+        }
+
+        const Eigen::Matrix<double, 1, mahru::nDoF> J_rel =
+            lateral_axis.transpose() * (state_->fbk.Jp_C[contact] - Jp_base);
+        const double distance =
+            side * lateral_axis.dot(state_->fbk.p_C[contact] - state_->fbk.p_B);
+        const double distance_dot =
+            side * lateral_axis.dot(state_->fbk.pdot_C[contact] - state_->fbk.pdot_B);
+        const double jdot_rel =
+            side
+            * (lateral_axis.transpose() * state_->fbk.Jdotp_C[contact]
+               * robot_->xidot)(0);
+        const double ddot_min = std::clamp(
+            input_.swing_lateral_clearance_kp
+                * (input_.swing_lateral_clearance_distance - distance)
+            - input_.swing_lateral_clearance_kd * distance_dot,
+            -input_.swing_lateral_clearance_max_acc,
+            input_.swing_lateral_clearance_max_acc);
+
+        d.block(row, 0, 1, mahru::nDoF) = side * J_rel;
+        f(row) = ddot_min - jdot_rel;
+        ++row;
+    }
+
+    return {Eigen::MatrixXd(), Eigen::VectorXd(), d, f};
 }
 
 WBCTask WeightedWBC::formulateFrictionConeConstraint()
@@ -496,6 +799,9 @@ bool WeightedWBC::solveQP(
     OsqpEigen::Solver solver;
     solver.settings()->setVerbosity(false);
     solver.settings()->setWarmStart(false);
+    solver.settings()->setMaxIteration(400);
+    solver.settings()->setAbsoluteTolerance(1e-3);
+    solver.settings()->setRelativeTolerance(1e-3);
     solver.data()->setNumberOfVariables(kNumDecisionVars);
     solver.data()->setNumberOfConstraints(numConstraints);
 
@@ -508,7 +814,11 @@ bool WeightedWBC::solveQP(
         return false;
     }
 
-    if (solver.solveProblem() != OsqpEigen::ErrorExitFlag::NoError) {
+    const auto exit_flag = solver.solveProblem();
+    const auto status = solver.getStatus();
+    if (exit_flag != OsqpEigen::ErrorExitFlag::NoError
+        || (status != OsqpEigen::Status::Solved
+            && status != OsqpEigen::Status::SolvedInaccurate)) {
         return false;
     }
 
@@ -537,6 +847,14 @@ void WeightedWBC::loadWeightGain()
         }
         if (yaml_node["W_RollAngularMomentum"]) {
             W_roll_angular_momentum_ = yaml_node["W_RollAngularMomentum"].as<double>();
+        }
+        if (yaml_node["W_SwingLegRollMomentum"]) {
+            W_swing_leg_roll_momentum_ =
+                yaml_node["W_SwingLegRollMomentum"].as<double>();
+        }
+        if (yaml_node["W_SwingLateralAccel"]) {
+            W_swing_lateral_acceleration_ =
+                yaml_node["W_SwingLateralAccel"].as<double>();
         }
         if (yaml_node["W_TorsoYawJointAcc"]) {
             W_torso_yaw_joint_acc_ = yaml_node["W_TorsoYawJointAcc"].as<double>();

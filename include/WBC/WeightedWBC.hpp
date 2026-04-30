@@ -26,18 +26,47 @@ public:
         Eigen::Vector3d pdot_CoM_d = Eigen::Vector3d::Zero();
         Eigen::Vector3d pddot_CoM_ff = Eigen::Vector3d::Zero();
         Eigen::Vector3d lin_vel_d = Eigen::Vector3d::Zero();
+        Eigen::Vector3d lin_acc_d = Eigen::Vector3d::Zero();
         Eigen::Vector3d omega_B_d = Eigen::Vector3d::Zero();
         Eigen::Vector3d omegadot_B_ff = Eigen::Vector3d::Zero();
+        Eigen::Vector3d centroidal_moment_ff = Eigen::Vector3d::Zero();
         Eigen::Matrix3d R_B_d = Eigen::Matrix3d::Identity();
         Eigen::Matrix<double, ConvexMpc::kForceDim, 1> grfs_mpc =
             Eigen::Matrix<double, ConvexMpc::kForceDim, 1>::Zero();
         int swing_contact_index = -1;
         Eigen::Vector3d p_sw_d = Eigen::Vector3d::Zero();
         Eigen::Vector3d pdot_sw_d = Eigen::Vector3d::Zero();
+        int secondary_swing_contact_index = -1;
+        Eigen::Vector3d p_sw2_d = Eigen::Vector3d::Zero();
+        Eigen::Vector3d pdot_sw2_d = Eigen::Vector3d::Zero();
+        Eigen::Vector4d linear_motion_task_mask = Eigen::Vector4d::Ones();
+        Eigen::Matrix<double, DOF6, 1> centroidal_force_task_mask =
+            Eigen::Matrix<double, DOF6, 1>::Ones();
         bool enable_centroidal_force_task = false;
         bool enable_roll_angular_momentum_task = false;
+        bool enable_swing_leg_roll_momentum_task = false;
+        bool enable_swing_lateral_acceleration_task = false;
+        bool enable_swing_clearance_constraint = false;
+        bool enable_swing_lateral_clearance_constraint = false;
+        bool enable_lateral_contact_constraint = false;
+        bool enable_sagittal_contact_constraint = false;
+        double lateral_contact_kd = 10.0;
+        double sagittal_contact_kd = 10.0;
+        double swing_clearance_height = 0.04;
+        double swing_clearance_kp = 600.0;
+        double swing_clearance_kd = 50.0;
+        double swing_clearance_max_acc = 120.0;
+        Eigen::Vector3d swing_lateral_clearance_axis = Eigen::Vector3d::UnitY();
+        double swing_lateral_clearance_side = -1.0;
+        double swing_lateral_clearance_distance = 0.25;
+        double swing_lateral_clearance_kp = 200.0;
+        double swing_lateral_clearance_kd = 20.0;
+        double swing_lateral_clearance_max_acc = 50.0;
         Eigen::Vector3d roll_angular_momentum_axis = Eigen::Vector3d::UnitX();
+        Eigen::Vector3d swing_lateral_acceleration_axis = Eigen::Vector3d::UnitY();
         double roll_angular_momentum_rate_d = 0.0;
+        double swing_leg_roll_momentum_rate_d = 0.0;
+        double swing_lateral_acceleration_d = 0.0;
     };
 
     struct Output {
@@ -107,6 +136,8 @@ private:
     double W_CenAngMom_Compen_ = 1.0;
     double W_centroidal_force_ = 1.0;
     double W_roll_angular_momentum_ = 0.5;
+    double W_swing_leg_roll_momentum_ = 0.0;
+    double W_swing_lateral_acceleration_ = 0.0;
     double W_torso_yaw_joint_acc_ = 0.0;
     double W_wheelAccel_ = 10.0;
     double joint_qddot_limit_ = 120.0;
@@ -138,9 +169,16 @@ private:
     WBCTask formulateLinearMotionTask();
     WBCTask formulateCentroidalForceTask();
     WBCTask formulateRollAngularMomentumTask();
+    WBCTask formulateSwingLegRollMomentumTask();
+    WBCTask formulateSwingLateralAccelerationTask();
     WBCTask formulateTorsoYawJointAccelerationTask();
     WBCTask formulateSwingLegTask(const Eigen::Matrix3d& swingKp,
                                   const Eigen::Matrix3d& swingKd);
+    WBCTask formulateSwingContactTask(int contact,
+                                      const Eigen::Vector3d& p_d,
+                                      const Eigen::Vector3d& pdot_d,
+                                      const Eigen::Matrix3d& swingKp,
+                                      const Eigen::Matrix3d& swingKd);
     WBCTask formulateSlidingJointTask();
     WBCTask formulateSwingWheelTask();
     WBCTask formulateJointAccelerationTask(const std::vector<int>& selectedJointsIdx,
@@ -150,6 +188,8 @@ private:
 
     WBCTask formulateFloatingBaseConstraint();
     WBCTask formulateContactNormalConstraint();
+    WBCTask formulateSwingClearanceConstraint();
+    WBCTask formulateSwingLateralClearanceConstraint();
     WBCTask formulateFrictionConeConstraint();
     WBCTask formulateAccelerationLimitConstraint();
     bool solveQP(const WBCTask& constraints,
