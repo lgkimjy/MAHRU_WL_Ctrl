@@ -8,6 +8,7 @@ W_CenAngMom_Compen: 1
 W_CentroidalForce: 200
 W_RollAngularMomentum: 500
 W_SwingLegRollMomentum: 7000
+W_ArmRollMomentum: 500
 W_SwingLateralAccel: 1000
 W_TorsoYawJointAcc: 7000
 W_wheelAccel: 100

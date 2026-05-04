@@ -81,6 +81,8 @@ struct RobotCtrl {
     double roll_momentum_rate_wbc_error = 0.0;
     double swing_leg_roll_momentum_rate_d = 0.0;
     double swing_leg_roll_momentum_rate_wbc = 0.0;
+    double arm_roll_momentum_rate_d = 0.0;
+    double arm_roll_momentum_rate_wbc = 0.0;
     double roll_momentum_y_err = 0.0;
     double roll_momentum_ydot_err = 0.0;
     double roll_momentum_height = 0.0;

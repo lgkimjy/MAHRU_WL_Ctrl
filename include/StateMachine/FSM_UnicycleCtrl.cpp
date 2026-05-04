@@ -294,12 +294,22 @@ void FSM_UnicycleCtrlState<T>::updateSwingLegReactionReference()
     const double roll_rate = roll_axis.dot(robot_data_->fbk.omega_B);
     const double foot_side =
         right_wheel_lift_pelvis_offset_.y() < 0.0 ? -1.0 : 1.0;
+    const Eigen::Vector3d p_support = leftSupportPoint();
+    const Eigen::Vector3d p_com =
+        robot_data_->fbk.p_CoM.z() > 1e-6 ? robot_data_->fbk.p_CoM : arbml_->p_CoM;
+    const Eigen::Vector3d pdot_com =
+        robot_data_->fbk.p_CoM.z() > 1e-6 ? robot_data_->fbk.pdot_CoM : arbml_->pdot_CoM;
+    const double y_err = lateral_axis.dot(p_com - p_support);
+    const double ydot_err = lateral_axis.dot(pdot_com);
 
     if (enable_swing_leg_reaction_) {
         const double raw_offset_cmd =
             swing_leg_reaction_sign_
             * (swing_leg_reaction_kp_ * roll
-               + swing_leg_reaction_kd_ * roll_rate);
+               + swing_leg_reaction_kd_ * roll_rate)
+            + swing_leg_reaction_com_sign_
+              * (swing_leg_reaction_com_kp_ * y_err
+                 + swing_leg_reaction_com_kd_ * ydot_err);
         const double offset_cmd =
             std::clamp(foot_side * raw_offset_cmd,
                        0.0,
@@ -320,7 +330,6 @@ void FSM_UnicycleCtrlState<T>::updateSwingLegReactionReference()
     }
 
     if (enable_swing_lateral_accel_task_) {
-        const Eigen::Vector3d p_support = leftSupportPoint();
         const Eigen::Vector3d p_swing = robot_data_->fbk.p_C[kRightWheelContact];
         const double height = std::max(0.2, p_swing.z() - p_support.z());
         const double mass = std::max(1.0, arbml_->getTotalMass());
@@ -365,13 +374,58 @@ double FSM_UnicycleCtrlState<T>::rightFootLiftStartTime() const
 template <typename T>
 Eigen::Vector3d FSM_UnicycleCtrlState<T>::leftSupportPoint() const
 {
-    if (enable_single_wheel_stance_) {
+    if (isSingleWheelStancePhase()) {
         return robot_data_->fbk.p_C[kLeftWheelContact];
     }
 
     return 0.5 * (
         robot_data_->fbk.p_C[kLeftToeContact]
         + robot_data_->fbk.p_C[kLeftWheelContact]);
+}
+
+template <typename T>
+Eigen::Vector3d FSM_UnicycleCtrlState<T>::supportSagittalAxis() const
+{
+    if (isRightFootLiftPhase() && !isSingleWheelStancePhase()) {
+        Eigen::Vector3d axis =
+            robot_data_->fbk.p_C[kLeftWheelContact]
+            - robot_data_->fbk.p_C[kLeftToeContact];
+        axis.z() = 0.0;
+        if (axis.norm() > 1e-6 && axis.allFinite()) {
+            axis.normalize();
+            Eigen::Vector3d pelvis_forward = yawRotation(robot_data_->fbk.R_B).col(X_AXIS);
+            pelvis_forward.z() = 0.0;
+            if (pelvis_forward.norm() > 1e-6 && pelvis_forward.allFinite()) {
+                pelvis_forward.normalize();
+                if (axis.dot(pelvis_forward) < 0.0) {
+                    axis *= -1.0;
+                }
+            }
+            return axis;
+        }
+    }
+
+    Eigen::Vector3d axis = yawRotation(robot_data_->fbk.R_B).col(X_AXIS);
+    axis.z() = 0.0;
+    if (axis.norm() < 1e-6 || !axis.allFinite()) {
+        axis.setUnit(X_AXIS);
+    } else {
+        axis.normalize();
+    }
+    return axis;
+}
+
+template <typename T>
+Eigen::Vector3d FSM_UnicycleCtrlState<T>::supportLateralAxis() const
+{
+    const Eigen::Vector3d sagittal_axis = supportSagittalAxis();
+    Eigen::Vector3d lateral_axis(-sagittal_axis.y(), sagittal_axis.x(), 0.0);
+    if (lateral_axis.norm() < 1e-6 || !lateral_axis.allFinite()) {
+        lateral_axis.setUnit(Y_AXIS);
+    } else {
+        lateral_axis.normalize();
+    }
+    return lateral_axis;
 }
 
 template <typename T>
@@ -454,14 +508,17 @@ void FSM_UnicycleCtrlState<T>::updateRollMomentumReference()
 template <typename T>
 bool FSM_UnicycleCtrlState<T>::isSingleWheelStancePhase() const
 {
-    return enable_single_wheel_stance_ && isRightFootLiftPhase();
+    return enable_single_wheel_stance_
+        && isRightFootLiftPhase()
+        && this->state_time
+            >= rightFootLiftStartTime() + right_foot_lift_duration_;
 }
 
 template <typename T>
 bool FSM_UnicycleCtrlState<T>::isLineContactWheelControlPhase() const
 {
     return enable_line_contact_wheel_control_
-        && !enable_single_wheel_stance_
+        && !isSingleWheelStancePhase()
         && isRightFootLiftPhase();
 }
 
@@ -482,8 +539,55 @@ void FSM_UnicycleCtrlState<T>::updateSingleWheelPitchCommand()
         robot_data_->fbk.R_C[kLeftWheelContact].col(Y_AXIS).dot(
             robot_data_->fbk.pdot_C[kLeftWheelContact]);
 
-    const bool enable_stance_wheel_pitch =
-        isSingleWheelStancePhase() || isLineContactWheelControlPhase();
+    const bool enable_stance_wheel_pitch = isSingleWheelStancePhase();
+    if (isLineContactWheelControlPhase()
+        && enable_line_contact_sagittal_wheel_feedback_) {
+        const Eigen::Vector3d toe = robot_data_->fbk.p_C[kLeftToeContact];
+        const Eigen::Vector3d wheel = robot_data_->fbk.p_C[kLeftWheelContact];
+        Eigen::Vector3d sagittal_axis = wheel - toe;
+        sagittal_axis.z() = 0.0;
+        if (sagittal_axis.norm() < 1e-6 || !sagittal_axis.allFinite()) {
+            sagittal_axis = yawRotation(robot_data_->fbk.R_B).col(X_AXIS);
+        } else {
+            sagittal_axis.normalize();
+        }
+
+        const Eigen::Vector3d support = 0.5 * (toe + wheel);
+        const Eigen::Vector3d support_vel =
+            0.5 * (robot_data_->fbk.pdot_C[kLeftToeContact]
+                   + robot_data_->fbk.pdot_C[kLeftWheelContact]);
+        const double x = sagittal_axis.dot(robot_data_->fbk.p_CoM - support);
+        const double xdot =
+            sagittal_axis.dot(robot_data_->fbk.pdot_CoM - support_vel);
+        const double height =
+            std::max(0.2, robot_data_->fbk.p_CoM.z() - support.z());
+        const double omega =
+            std::sqrt(std::max(1e-6, arbml_->getGravityConst() / height));
+        const double x_capture = x + xdot / omega;
+        constexpr double kSupportMargin = 0.03;
+        const double toe_s = sagittal_axis.dot(toe - support);
+        const double wheel_s = sagittal_axis.dot(wheel - support);
+        double min_capture = std::min(toe_s, wheel_s) + kSupportMargin;
+        double max_capture = std::max(toe_s, wheel_s) - kSupportMargin;
+        if (min_capture > max_capture) {
+            min_capture = std::min(toe_s, wheel_s);
+            max_capture = std::max(toe_s, wheel_s);
+        }
+        const double x_capture_clamped =
+            std::clamp(x_capture, min_capture, max_capture);
+        const double capture_error = x_capture - x_capture_clamped;
+        single_wheel_lin_vel_d_ =
+            line_contact_sagittal_wheel_sign_
+            * line_contact_sagittal_wheel_kp_
+            * capture_error;
+        single_wheel_lin_vel_d_ =
+            std::clamp(single_wheel_lin_vel_d_,
+                       -line_contact_sagittal_wheel_max_vel_,
+                       line_contact_sagittal_wheel_max_vel_);
+        robot_data_->ctrl.single_wheel_lin_vel_d = single_wheel_lin_vel_d_;
+        robot_data_->ctrl.single_wheel_stance_qdot_d =
+            single_wheel_lin_vel_d_ / kWheelRadius;
+    }
     if (!enable_stance_wheel_pitch || !enable_single_wheel_pitch_control_) {
         return;
     }
@@ -491,10 +595,25 @@ void FSM_UnicycleCtrlState<T>::updateSingleWheelPitchCommand()
     const double pitch_error =
         robot_data_->ctrl.single_wheel_pitch - single_wheel_pitch_d_;
     const double pitch_rate_error = robot_data_->ctrl.single_wheel_pitch_rate;
+    const Eigen::Vector3d support = robot_data_->fbk.p_C[kLeftWheelContact];
+    const Eigen::Vector3d support_vel = robot_data_->fbk.pdot_C[kLeftWheelContact];
+    const Eigen::Vector3d sagittal_axis = supportSagittalAxis();
+    const Eigen::Vector3d p_com =
+        robot_data_->fbk.p_CoM.z() > 1e-6 ? robot_data_->fbk.p_CoM : arbml_->p_CoM;
+    const Eigen::Vector3d pdot_com =
+        robot_data_->fbk.p_CoM.z() > 1e-6 ? robot_data_->fbk.pdot_CoM : arbml_->pdot_CoM;
+    const double x = sagittal_axis.dot(p_com - support);
+    const double xdot = sagittal_axis.dot(pdot_com - support_vel);
+    const double height = std::max(0.2, p_com.z() - support.z());
+    const double omega =
+        std::sqrt(std::max(1e-6, arbml_->getGravityConst() / height));
+    const double capture_error =
+        x + xdot / omega - single_wheel_capture_offset_;
     single_wheel_lin_vel_d_ =
         single_wheel_pitch_sign_
-        * (single_wheel_pitch_kp_ * pitch_error
-           + single_wheel_pitch_kd_ * pitch_rate_error);
+            * (single_wheel_pitch_kp_ * pitch_error
+               + single_wheel_pitch_kd_ * pitch_rate_error)
+        + single_wheel_capture_kp_ * capture_error;
     single_wheel_lin_vel_d_ = std::clamp(
         single_wheel_lin_vel_d_,
         -single_wheel_max_lin_vel_,
@@ -559,8 +678,12 @@ void FSM_UnicycleCtrlState<T>::updateSingleWheelCoMReference()
     const double pitch_error =
         robot_data_->ctrl.single_wheel_pitch - single_wheel_pitch_d_;
     const double pitch_rate_error = robot_data_->ctrl.single_wheel_pitch_rate;
+    const double com_feedback_sign =
+        isSingleWheelStancePhase()
+            ? single_wheel_com_single_feedback_sign_
+            : single_wheel_com_feedback_sign_;
     double x_offset =
-        single_wheel_com_feedback_sign_
+        com_feedback_sign
         * (single_wheel_com_pitch_kp_ * pitch_error
            + single_wheel_com_pitch_kd_ * pitch_rate_error);
 
@@ -594,13 +717,55 @@ void FSM_UnicycleCtrlState<T>::updateSingleWheelCoMReference()
 
     x_offset = std::clamp(x_offset, min_offset, max_offset);
 
-    p_CoM_wbc_d_ = support + x_offset * sagittal_axis;
-    p_CoM_wbc_d_.z() = p_CoM_nominal_.z() + com_shift_offset_.z();
-    pdot_CoM_wbc_d_ = robot_data_->fbk.pdot_C[kLeftWheelContact]
-        + single_wheel_com_feedback_sign_
+    Eigen::Vector3d p_com_target = support + x_offset * sagittal_axis;
+    p_com_target.z() = p_CoM_nominal_.z() + com_shift_offset_.z();
+    Eigen::Vector3d pdot_com_target = robot_data_->fbk.pdot_C[kLeftWheelContact]
+        + com_feedback_sign
           * single_wheel_com_pitch_kp_
           * pitch_rate_error
           * sagittal_axis;
+
+    if (isSingleWheelStancePhase()) {
+        if (!single_wheel_com_transition_initialized_) {
+            single_wheel_com_transition_initialized_ = true;
+            single_wheel_com_transition_start_time_ = this->state_time;
+            single_wheel_com_transition_start_ = p_CoM_wbc_d_;
+            if (!single_wheel_com_transition_start_.allFinite()
+                || single_wheel_com_transition_start_.z() <= 1e-6) {
+                single_wheel_com_transition_start_ = robot_data_->fbk.p_CoM;
+            }
+            single_wheel_com_transition_start_.z() = p_com_target.z();
+            single_wheel_com_transition_start_vel_ = pdot_CoM_wbc_d_;
+            if (!single_wheel_com_transition_start_vel_.allFinite()) {
+                single_wheel_com_transition_start_vel_.setZero();
+            }
+        }
+
+        const double duration =
+            std::max(single_wheel_com_transition_time_, kControlDt);
+        const double phase =
+            (this->state_time - single_wheel_com_transition_start_time_)
+            / duration;
+        const double s = smoothstep(phase);
+        const double sdot = smoothstepDerivative(phase) / duration;
+        const Eigen::Vector3d delta =
+            p_com_target - single_wheel_com_transition_start_;
+
+        p_CoM_wbc_d_ =
+            single_wheel_com_transition_start_ + s * delta;
+        pdot_CoM_wbc_d_ =
+            (1.0 - s) * single_wheel_com_transition_start_vel_
+            + s * pdot_com_target
+            + sdot * delta;
+        if (phase >= 1.0) {
+            p_CoM_wbc_d_ = p_com_target;
+            pdot_CoM_wbc_d_ = pdot_com_target;
+        }
+    } else {
+        single_wheel_com_transition_initialized_ = false;
+        p_CoM_wbc_d_ = p_com_target;
+        pdot_CoM_wbc_d_ = pdot_com_target;
+    }
     pddot_CoM_wbc_ff_.setZero();
 
     robot_data_->ctrl.p_CoM_d = p_CoM_wbc_d_;
@@ -695,7 +860,7 @@ void FSM_UnicycleCtrlState<T>::computeFourContactWBC()
         wbc_input.swing_clearance_kd = swing_clearance_kd_;
         wbc_input.swing_clearance_max_acc = swing_clearance_max_acc_;
         wbc_input.enable_swing_lateral_clearance_constraint = true;
-        wbc_input.swing_lateral_clearance_axis = yawRotation(robot_data_->fbk.R_B).col(Y_AXIS);
+        wbc_input.swing_lateral_clearance_axis = supportLateralAxis();
         wbc_input.swing_lateral_clearance_side =
             right_wheel_lift_pelvis_offset_.y() < 0.0 ? -1.0 : 1.0;
         wbc_input.swing_lateral_clearance_distance =
@@ -707,7 +872,8 @@ void FSM_UnicycleCtrlState<T>::computeFourContactWBC()
         if (enable_swing_lateral_accel_task_) {
             wbc_input.enable_swing_lateral_acceleration_task = true;
             wbc_input.swing_lateral_acceleration_axis =
-                yawRotation(robot_data_->fbk.R_B).col(Y_AXIS);
+                (right_wheel_lift_pelvis_offset_.y() < 0.0 ? -1.0 : 1.0)
+                * yawRotation(robot_data_->fbk.R_B).col(Y_AXIS);
             wbc_input.swing_lateral_acceleration_d = swing_lateral_accel_d_;
         }
     }
@@ -736,12 +902,14 @@ void FSM_UnicycleCtrlState<T>::computeFourContactWBC()
             << line_contact_com_xy_force_mask_,
                line_contact_com_xy_force_mask_,
                1.0,
-               line_contact_moment_xy_mask_,
-               line_contact_moment_xy_mask_,
+               line_contact_moment_x_mask_,
+               line_contact_moment_y_mask_,
                0.0;
     }
     robot_data_->ctrl.swing_leg_roll_momentum_rate_d = 0.0;
     robot_data_->ctrl.swing_leg_roll_momentum_rate_wbc = 0.0;
+    robot_data_->ctrl.arm_roll_momentum_rate_d = 0.0;
+    robot_data_->ctrl.arm_roll_momentum_rate_wbc = 0.0;
     if (enable_roll_momentum_ref_ && isRightFootLiftPhase()) {
         wbc_input.enable_roll_angular_momentum_task = true;
         wbc_input.roll_angular_momentum_axis = roll_momentum_axis_;
@@ -754,6 +922,15 @@ void FSM_UnicycleCtrlState<T>::computeFourContactWBC()
                 swing_leg_roll_momentum_max_rate_);
             robot_data_->ctrl.swing_leg_roll_momentum_rate_d =
                 wbc_input.swing_leg_roll_momentum_rate_d;
+        }
+        if (enable_arm_roll_momentum_task_) {
+            wbc_input.enable_arm_roll_momentum_task = true;
+            wbc_input.arm_roll_momentum_rate_d = std::clamp(
+                arm_roll_momentum_scale_ * roll_momentum_rate_d_,
+                -arm_roll_momentum_max_rate_,
+                arm_roll_momentum_max_rate_);
+            robot_data_->ctrl.arm_roll_momentum_rate_d =
+                wbc_input.arm_roll_momentum_rate_d;
         }
     }
 
@@ -774,23 +951,47 @@ void FSM_UnicycleCtrlState<T>::computeFourContactWBC()
         if (wbc_input.enable_swing_leg_roll_momentum_task) {
             const Eigen::Matrix<double, 1, mahru::nDoF> roll_cmm_row =
                 roll_momentum_axis_.transpose() * arbml_->Ar_CoM;
-            std::array<int, 4> swing_joints = {-1, -1, -1, -1};
+            std::array<int, 5> swing_joints = {-1, -1, -1, -1, -1};
             if (wbc_input.swing_contact_index == kRightWheelContact) {
-                swing_joints = {9, 10, 11, 12};
+                swing_joints = {9, 10, 11, 12, 13};
             } else if (wbc_input.swing_contact_index == kLeftWheelContact) {
-                swing_joints = {14, 15, 16, 17};
+                swing_joints = {14, 15, 16, 17, 18};
             }
             double swing_roll_momentum_rate = 0.0;
+            Eigen::VectorXd swing_xidot = Eigen::VectorXd::Zero(mahru::nDoF);
             for (const int joint : swing_joints) {
                 if (joint < 0) {
                     continue;
                 }
                 swing_roll_momentum_rate +=
                     roll_cmm_row(DOF6 + joint) * wbc_output.xiddot_d(DOF6 + joint);
+                swing_xidot(DOF6 + joint) = arbml_->xidot(DOF6 + joint);
             }
+            swing_roll_momentum_rate +=
+                (roll_momentum_axis_.transpose()
+                 * arbml_->Adotr_CoM * swing_xidot)(0);
             if (std::isfinite(swing_roll_momentum_rate)) {
                 robot_data_->ctrl.swing_leg_roll_momentum_rate_wbc =
                     swing_roll_momentum_rate;
+            }
+        }
+        if (wbc_input.enable_arm_roll_momentum_task) {
+            const Eigen::Matrix<double, 1, mahru::nDoF> roll_cmm_row =
+                roll_momentum_axis_.transpose() * arbml_->Ar_CoM;
+            constexpr std::array<int, 2> shoulder_roll_joints = {2, 6};
+            double arm_roll_momentum_rate = 0.0;
+            Eigen::VectorXd arm_xidot = Eigen::VectorXd::Zero(mahru::nDoF);
+            for (const int joint : shoulder_roll_joints) {
+                arm_roll_momentum_rate +=
+                    roll_cmm_row(DOF6 + joint) * wbc_output.xiddot_d(DOF6 + joint);
+                arm_xidot(DOF6 + joint) = arbml_->xidot(DOF6 + joint);
+            }
+            arm_roll_momentum_rate +=
+                (roll_momentum_axis_.transpose()
+                 * arbml_->Adotr_CoM * arm_xidot)(0);
+            if (std::isfinite(arm_roll_momentum_rate)) {
+                robot_data_->ctrl.arm_roll_momentum_rate_wbc =
+                    arm_roll_momentum_rate;
             }
         }
     }
@@ -801,10 +1002,29 @@ void FSM_UnicycleCtrlState<T>::computeFourContactWBC()
             - robot_data_->param.Kd(kRightToeJoint) * robot_data_->fbk.jvel(kRightToeJoint);
     }
     if (isSingleWheelStancePhase()) {
+        const double left_toe_lift_start_time =
+            rightFootLiftStartTime() + right_foot_lift_duration_;
+        const double left_toe_lift_phase =
+            (this->state_time - left_toe_lift_start_time)
+            / std::max(left_toe_lift_duration_, kControlDt);
+        const double left_toe_target =
+            jpos_0_(kLeftToeJoint)
+            + smoothstep(left_toe_lift_phase)
+              * (kLeftToeLiftTarget - jpos_0_(kLeftToeJoint));
         torq_wbc_(kLeftToeJoint) =
             robot_data_->param.Kp(kLeftToeJoint)
-            * (kLeftToeLiftTarget - robot_data_->fbk.jpos(kLeftToeJoint))
+            * (left_toe_target - robot_data_->fbk.jpos(kLeftToeJoint))
             - robot_data_->param.Kd(kLeftToeJoint) * robot_data_->fbk.jvel(kLeftToeJoint);
+        if (enable_single_wheel_velocity_pd_) {
+            const double qdot_d = single_wheel_lin_vel_d_ / kWheelRadius;
+            const double wheel_tau =
+                std::clamp(
+                    single_wheel_velocity_kd_
+                        * (qdot_d - robot_data_->fbk.jvel(kLeftWheelJoint)),
+                    -single_wheel_velocity_max_torque_,
+                    single_wheel_velocity_max_torque_);
+            torq_wbc_(kLeftWheelJoint) += wheel_tau;
+        }
     }
 }
 
@@ -1325,6 +1545,18 @@ void FSM_UnicycleCtrlState<T>::readConfig(std::string config_file)
                     swing_roll["max_rate"].as<double>();
             }
         }
+        if (yaml_node["arm_roll_momentum"]) {
+            const YAML::Node arm_roll = yaml_node["arm_roll_momentum"];
+            if (arm_roll["enabled"]) {
+                enable_arm_roll_momentum_task_ = arm_roll["enabled"].as<bool>();
+            }
+            if (arm_roll["scale"]) {
+                arm_roll_momentum_scale_ = arm_roll["scale"].as<double>();
+            }
+            if (arm_roll["max_rate"]) {
+                arm_roll_momentum_max_rate_ = arm_roll["max_rate"].as<double>();
+            }
+        }
         if (yaml_node["swing_leg_reaction"]) {
             const YAML::Node reaction = yaml_node["swing_leg_reaction"];
             if (reaction["enabled"]) {
@@ -1338,6 +1570,15 @@ void FSM_UnicycleCtrlState<T>::readConfig(std::string config_file)
             }
             if (reaction["roll_rate_kd"]) {
                 swing_leg_reaction_kd_ = reaction["roll_rate_kd"].as<double>();
+            }
+            if (reaction["com_sign"]) {
+                swing_leg_reaction_com_sign_ = reaction["com_sign"].as<double>();
+            }
+            if (reaction["com_kp"]) {
+                swing_leg_reaction_com_kp_ = reaction["com_kp"].as<double>();
+            }
+            if (reaction["com_kd"]) {
+                swing_leg_reaction_com_kd_ = reaction["com_kd"].as<double>();
             }
             if (reaction["max_offset"]) {
                 swing_leg_reaction_max_offset_ = reaction["max_offset"].as<double>();
@@ -1381,6 +1622,26 @@ void FSM_UnicycleCtrlState<T>::readConfig(std::string config_file)
                 if (line["enabled"]) {
                     enable_line_contact_wheel_control_ = line["enabled"].as<bool>();
                 }
+                if (line["sagittal_feedback_enabled"]) {
+                    enable_line_contact_sagittal_wheel_feedback_ =
+                        line["sagittal_feedback_enabled"].as<bool>();
+                }
+                if (line["sagittal_feedback_sign"]) {
+                    line_contact_sagittal_wheel_sign_ =
+                        line["sagittal_feedback_sign"].as<double>();
+                }
+                if (line["sagittal_feedback_kp"]) {
+                    line_contact_sagittal_wheel_kp_ =
+                        line["sagittal_feedback_kp"].as<double>();
+                }
+                if (line["sagittal_feedback_kd"]) {
+                    line_contact_sagittal_wheel_kd_ =
+                        line["sagittal_feedback_kd"].as<double>();
+                }
+                if (line["sagittal_feedback_max_vel"]) {
+                    line_contact_sagittal_wheel_max_vel_ =
+                        line["sagittal_feedback_max_vel"].as<double>();
+                }
             }
             if (single["pitch_control"]) {
                 const YAML::Node pitch = single["pitch_control"];
@@ -1406,11 +1667,30 @@ void FSM_UnicycleCtrlState<T>::readConfig(std::string config_file)
                 if (pitch["sign"]) {
                     single_wheel_pitch_sign_ = pitch["sign"].as<double>();
                 }
+                if (pitch["capture_kp"]) {
+                    single_wheel_capture_kp_ = pitch["capture_kp"].as<double>();
+                }
+                if (pitch["capture_offset"]) {
+                    single_wheel_capture_offset_ =
+                        pitch["capture_offset"].as<double>();
+                }
                 if (pitch["max_lin_vel"]) {
                     single_wheel_max_lin_vel_ = pitch["max_lin_vel"].as<double>();
                 }
                 if (pitch["max_lin_acc"]) {
                     single_wheel_max_lin_acc_ = pitch["max_lin_acc"].as<double>();
+                }
+                if (pitch["wheel_velocity_pd_enabled"]) {
+                    enable_single_wheel_velocity_pd_ =
+                        pitch["wheel_velocity_pd_enabled"].as<bool>();
+                }
+                if (pitch["wheel_velocity_kd"]) {
+                    single_wheel_velocity_kd_ =
+                        pitch["wheel_velocity_kd"].as<double>();
+                }
+                if (pitch["wheel_velocity_max_torque"]) {
+                    single_wheel_velocity_max_torque_ =
+                        pitch["wheel_velocity_max_torque"].as<double>();
                 }
             }
             if (single["com_feedback"]) {
@@ -1426,9 +1706,19 @@ void FSM_UnicycleCtrlState<T>::readConfig(std::string config_file)
                 }
                 if (com["sign"]) {
                     single_wheel_com_feedback_sign_ = com["sign"].as<double>();
+                    single_wheel_com_single_feedback_sign_ =
+                        single_wheel_com_feedback_sign_;
+                }
+                if (com["single_sign"]) {
+                    single_wheel_com_single_feedback_sign_ =
+                        com["single_sign"].as<double>();
                 }
                 if (com["max_offset"]) {
                     single_wheel_com_max_offset_ = com["max_offset"].as<double>();
+                }
+                if (com["transition_time"]) {
+                    single_wheel_com_transition_time_ =
+                        com["transition_time"].as<double>();
                 }
             }
             if (single["lateral_contact_kd"]) {
@@ -1438,6 +1728,10 @@ void FSM_UnicycleCtrlState<T>::readConfig(std::string config_file)
             if (single["sagittal_contact_kd"]) {
                 single_wheel_sagittal_contact_kd_ =
                     single["sagittal_contact_kd"].as<double>();
+            }
+            if (single["left_toe_lift_duration"]) {
+                left_toe_lift_duration_ =
+                    single["left_toe_lift_duration"].as<double>();
             }
         }
         if (yaml_node["line_contact_balance"]) {
@@ -1449,6 +1743,16 @@ void FSM_UnicycleCtrlState<T>::readConfig(std::string config_file)
             if (balance["moment_xy_mask"]) {
                 line_contact_moment_xy_mask_ =
                     balance["moment_xy_mask"].as<double>();
+                line_contact_moment_x_mask_ = line_contact_moment_xy_mask_;
+                line_contact_moment_y_mask_ = line_contact_moment_xy_mask_;
+            }
+            if (balance["moment_x_mask"]) {
+                line_contact_moment_x_mask_ =
+                    balance["moment_x_mask"].as<double>();
+            }
+            if (balance["moment_y_mask"]) {
+                line_contact_moment_y_mask_ =
+                    balance["moment_y_mask"].as<double>();
             }
             if (balance["orientation_xy_mask"]) {
                 line_contact_orientation_xy_mask_ =

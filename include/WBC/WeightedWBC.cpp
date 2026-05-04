@@ -133,16 +133,16 @@ WBCTask WeightedWBC::formulateWeightedTask()
         task = task + formulateRollAngularMomentumTask() * W_roll_angular_momentum_;
     }
 
-    if (input_.enable_swing_leg_roll_momentum_task
-        && W_swing_leg_roll_momentum_ > 0.0) {
-        task = task
-            + formulateSwingLegRollMomentumTask() * W_swing_leg_roll_momentum_;
+    if (input_.enable_swing_leg_roll_momentum_task && W_swing_leg_roll_momentum_ > 0.0) {
+        task = task + formulateSwingLegRollMomentumTask() * W_swing_leg_roll_momentum_;
     }
 
-    if (input_.enable_swing_lateral_acceleration_task
-        && W_swing_lateral_acceleration_ > 0.0) {
-        task = task
-            + formulateSwingLateralAccelerationTask() * W_swing_lateral_acceleration_;
+    if (input_.enable_arm_roll_momentum_task && W_arm_roll_momentum_ > 0.0) {
+        task = task + formulateArmRollMomentumTask() * W_arm_roll_momentum_;
+    }
+
+    if (input_.enable_swing_lateral_acceleration_task && W_swing_lateral_acceleration_ > 0.0) {
+        task = task + formulateSwingLateralAccelerationTask() * W_swing_lateral_acceleration_;
     }
 
     if (W_torso_yaw_joint_acc_ > 0.0) {
@@ -305,25 +305,63 @@ WBCTask WeightedWBC::formulateSwingLegRollMomentumTask()
         roll_axis.normalize();
     }
 
-    std::array<int, 4> swing_leg_joints = {};
+    std::array<int, 5> swing_leg_joints = {};
     if (input_.swing_contact_index == 1) {
-        swing_leg_joints = {9, 10, 11, 12};
+        swing_leg_joints = {9, 10, 11, 12, 13};
     } else if (input_.swing_contact_index == 3) {
-        swing_leg_joints = {14, 15, 16, 17};
+        swing_leg_joints = {14, 15, 16, 17, 18};
     } else {
         return WBCTask(kNumDecisionVars);
     }
 
     const Eigen::Matrix<double, 1, mahru::nDoF> cmm_row =
         roll_axis.transpose() * robot_->Ar_CoM;
+    Eigen::VectorXd swing_xidot = Eigen::VectorXd::Zero(mahru::nDoF);
     for (const int joint : swing_leg_joints) {
         if (joint < 0 || joint >= static_cast<int>(mahru::num_act_joint)) {
             continue;
         }
         a(0, DOF6 + joint) = cmm_row(DOF6 + joint);
+        swing_xidot(DOF6 + joint) = robot_->xidot(DOF6 + joint);
     }
 
-    b(0) = input_.swing_leg_roll_momentum_rate_d;
+    const double swing_bias =
+        (roll_axis.transpose() * robot_->Adotr_CoM * swing_xidot)(0);
+    b(0) = input_.swing_leg_roll_momentum_rate_d - swing_bias;
+    if (!a.allFinite() || !std::isfinite(b(0))) {
+        return WBCTask(kNumDecisionVars);
+    }
+
+    return {a, b, Eigen::MatrixXd(), Eigen::VectorXd()};
+}
+
+WBCTask WeightedWBC::formulateArmRollMomentumTask()
+{
+    Eigen::MatrixXd a = Eigen::MatrixXd::Zero(1, kNumDecisionVars);
+    Eigen::VectorXd b = Eigen::VectorXd::Zero(1);
+
+    Eigen::Vector3d roll_axis = input_.roll_angular_momentum_axis;
+    if (roll_axis.norm() < 1e-6 || !roll_axis.allFinite()) {
+        roll_axis = Eigen::Vector3d::UnitX();
+    } else {
+        roll_axis.normalize();
+    }
+
+    constexpr std::array<int, 2> shoulder_roll_joints = {2, 6};
+    const Eigen::Matrix<double, 1, mahru::nDoF> cmm_row =
+        roll_axis.transpose() * robot_->Ar_CoM;
+    Eigen::VectorXd arm_xidot = Eigen::VectorXd::Zero(mahru::nDoF);
+    for (const int joint : shoulder_roll_joints) {
+        if (joint < 0 || joint >= static_cast<int>(mahru::num_act_joint)) {
+            continue;
+        }
+        a(0, DOF6 + joint) = cmm_row(DOF6 + joint);
+        arm_xidot(DOF6 + joint) = robot_->xidot(DOF6 + joint);
+    }
+
+    const double arm_bias =
+        (roll_axis.transpose() * robot_->Adotr_CoM * arm_xidot)(0);
+    b(0) = input_.arm_roll_momentum_rate_d - arm_bias;
     if (!a.allFinite() || !std::isfinite(b(0))) {
         return WBCTask(kNumDecisionVars);
     }
@@ -851,6 +889,9 @@ void WeightedWBC::loadWeightGain()
         if (yaml_node["W_SwingLegRollMomentum"]) {
             W_swing_leg_roll_momentum_ =
                 yaml_node["W_SwingLegRollMomentum"].as<double>();
+        }
+        if (yaml_node["W_ArmRollMomentum"]) {
+            W_arm_roll_momentum_ = yaml_node["W_ArmRollMomentum"].as<double>();
         }
         if (yaml_node["W_SwingLateralAccel"]) {
             W_swing_lateral_acceleration_ =

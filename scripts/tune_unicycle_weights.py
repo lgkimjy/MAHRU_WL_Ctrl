@@ -111,9 +111,29 @@ def apply_candidate(weighted_text, fsm_text, candidate):
         weighted_text = replace_indented_vector(
             weighted_text, "orientation_kp", [candidate["orientation_kp_xy"], candidate["orientation_kp_xy"], 10]
         )
+    if "orientation_kp_roll" in candidate or "orientation_kp_pitch" in candidate:
+        weighted_text = replace_indented_vector(
+            weighted_text,
+            "orientation_kp",
+            [
+                candidate.get("orientation_kp_roll", 50),
+                candidate.get("orientation_kp_pitch", 200),
+                10,
+            ],
+        )
     if "orientation_kd_xy" in candidate:
         weighted_text = replace_indented_vector(
             weighted_text, "orientation_kd", [candidate["orientation_kd_xy"], candidate["orientation_kd_xy"], 1]
+        )
+    if "orientation_kd_roll" in candidate or "orientation_kd_pitch" in candidate:
+        weighted_text = replace_indented_vector(
+            weighted_text,
+            "orientation_kd",
+            [
+                candidate.get("orientation_kd_roll", 10),
+                candidate.get("orientation_kd_pitch", 20),
+                1,
+            ],
         )
     if "com_kp_xy" in candidate:
         weighted_text = replace_indented_vector(
@@ -210,6 +230,9 @@ def apply_candidate(weighted_text, fsm_text, candidate):
         ("swing_reaction_sign", "sign"),
         ("swing_reaction_roll_kp", "roll_kp"),
         ("swing_reaction_roll_rate_kd", "roll_rate_kd"),
+        ("swing_reaction_com_sign", "com_sign"),
+        ("swing_reaction_com_kp", "com_kp"),
+        ("swing_reaction_com_kd", "com_kd"),
         ("swing_reaction_max_offset", "max_offset"),
         ("swing_reaction_max_vel", "max_vel"),
         ("swing_reaction_tau", "tau"),
@@ -235,6 +258,25 @@ def apply_candidate(weighted_text, fsm_text, candidate):
         if key in candidate:
             fsm_text = replace_block_scalar(
                 fsm_text, "line_contact_balance", yaml_key, candidate[key]
+            )
+    for key, yaml_key in (
+        ("line_moment_x_mask", "moment_x_mask"),
+        ("line_moment_y_mask", "moment_y_mask"),
+    ):
+        if key in candidate:
+            fsm_text = replace_block_scalar(
+                fsm_text, "line_contact_balance", yaml_key, candidate[key]
+            )
+
+    for key, yaml_key in (
+        ("com_feedback_kp", "kp"),
+        ("com_feedback_kd", "kd"),
+        ("com_feedback_sign", "sign"),
+        ("com_feedback_max_offset", "max_offset"),
+    ):
+        if key in candidate:
+            fsm_text = replace_nested_block_scalar(
+                fsm_text, "single_wheel_stance", "com_feedback", yaml_key, candidate[key]
             )
 
     return weighted_text, fsm_text
@@ -423,6 +465,10 @@ def candidate_stream(trials, seed):
         "pitch_max_lin_acc": [0.0, 2.0, 4.0, 6.0],
         "orientation_kp_xy": [50, 100, 200],
         "orientation_kd_xy": [6, 10, 18],
+        "orientation_kp_roll": [30, 50, 80],
+        "orientation_kp_pitch": [150, 200, 250],
+        "orientation_kd_roll": [6, 10, 14],
+        "orientation_kd_pitch": [15, 20, 28],
         "com_kp_xy": [70, 100, 160],
         "com_kd_xy": [2, 5, 10],
         "com_shift_y_offset": [-0.04, -0.02, 0.0, 0.02],
@@ -442,8 +488,11 @@ def candidate_stream(trials, seed):
         "swing_reaction_sign": [-1.0, 1.0],
         "swing_reaction_roll_kp": [0.10, 0.20, 0.35, 0.50],
         "swing_reaction_roll_rate_kd": [0.00, 0.03, 0.06, 0.10],
-        "swing_reaction_max_offset": [0.04, 0.08, 0.12, 0.16],
-        "swing_reaction_max_vel": [0.4, 0.8, 1.2],
+        "swing_reaction_com_sign": [1.0],
+        "swing_reaction_com_kp": [0.20, 0.35, 0.50, 0.70],
+        "swing_reaction_com_kd": [0.06, 0.12, 0.18, 0.24],
+        "swing_reaction_max_offset": [0.08, 0.10, 0.12, 0.14],
+        "swing_reaction_max_vel": [0.8, 1.0, 1.2, 1.6],
         "swing_reaction_tau": [0.05, 0.10, 0.16],
         "swing_accel_enabled": [False, True],
         "swing_accel_sign": [-1.0, 1.0],
@@ -456,6 +505,11 @@ def candidate_stream(trials, seed):
         "line_roll_com_kp": [0.0, 0.04, 0.08, 0.12, 0.20],
         "line_roll_com_kd": [0.0, 0.005, 0.01, 0.02],
         "line_roll_com_max_offset": [0.0, 0.006, 0.012, 0.02, 0.035],
+        "line_moment_x_mask": [0.6, 0.8, 1.0],
+        "line_moment_y_mask": [0.8, 1.0],
+        "com_feedback_kp": [0.03, 0.04, 0.05],
+        "com_feedback_kd": [0.005, 0.01, 0.015],
+        "com_feedback_max_offset": [0.05, 0.06, 0.08],
     }
 
     handpicked = [

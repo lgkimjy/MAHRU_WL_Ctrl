@@ -45,6 +45,7 @@ public:
         bool enable_centroidal_force_task = false;
         bool enable_roll_angular_momentum_task = false;
         bool enable_swing_leg_roll_momentum_task = false;
+        bool enable_arm_roll_momentum_task = false;
         bool enable_swing_lateral_acceleration_task = false;
         bool enable_swing_clearance_constraint = false;
         bool enable_swing_lateral_clearance_constraint = false;
@@ -66,6 +67,7 @@ public:
         Eigen::Vector3d swing_lateral_acceleration_axis = Eigen::Vector3d::UnitY();
         double roll_angular_momentum_rate_d = 0.0;
         double swing_leg_roll_momentum_rate_d = 0.0;
+        double arm_roll_momentum_rate_d = 0.0;
         double swing_lateral_acceleration_d = 0.0;
     };
 
@@ -137,6 +139,7 @@ private:
     double W_centroidal_force_ = 1.0;
     double W_roll_angular_momentum_ = 0.5;
     double W_swing_leg_roll_momentum_ = 0.0;
+    double W_arm_roll_momentum_ = 0.0;
     double W_swing_lateral_acceleration_ = 0.0;
     double W_torso_yaw_joint_acc_ = 0.0;
     double W_wheelAccel_ = 10.0;
@@ -170,6 +173,7 @@ private:
     WBCTask formulateCentroidalForceTask();
     WBCTask formulateRollAngularMomentumTask();
     WBCTask formulateSwingLegRollMomentumTask();
+    WBCTask formulateArmRollMomentumTask();
     WBCTask formulateSwingLateralAccelerationTask();
     WBCTask formulateTorsoYawJointAccelerationTask();
     WBCTask formulateSwingLegTask(const Eigen::Matrix3d& swingKp,

@@ -134,6 +134,10 @@ private:
                     entry.state.ctrl.swing_leg_roll_momentum_rate_d);
         addToBuffer("ctrl/swing_leg_roll_momentum_rate_wbc",
                     entry.state.ctrl.swing_leg_roll_momentum_rate_wbc);
+        addToBuffer("ctrl/arm_roll_momentum_rate_d",
+                    entry.state.ctrl.arm_roll_momentum_rate_d);
+        addToBuffer("ctrl/arm_roll_momentum_rate_wbc",
+                    entry.state.ctrl.arm_roll_momentum_rate_wbc);
         addToBuffer("ctrl/roll_momentum_y_err", entry.state.ctrl.roll_momentum_y_err);
         addToBuffer("ctrl/roll_momentum_ydot_err", entry.state.ctrl.roll_momentum_ydot_err);
         addToBuffer("ctrl/roll_momentum_height", entry.state.ctrl.roll_momentum_height);

@@ -1,6 +1,6 @@
 notes:
   description: "Initial UnicycleCtrl baseline: transition from JPosCtrl, hold all four contacts, and stabilize with WeightedWBC."
-  contact_mode: "four_contact_balance"
+  contact_mode: "line_contact_balance"
   yaw_rate_command_enabled: false
 
 sway:
@@ -37,7 +37,7 @@ roll_angular_momentum:
   kd: 20
   roll_angle_kp: 20
   roll_rate_kd: 5
-  max_rate: 800
+  max_rate: 50
   sign: 1.0
   use_lateral_com: false
 
@@ -46,47 +46,70 @@ swing_leg_roll_momentum:
   scale: -1
   max_rate: 300
 
+arm_roll_momentum:
+  enabled: false
+  scale: -0.3
+  max_rate: 80
+
 swing_leg_reaction:
   enabled: true
-  sign: -1
-  roll_kp: 0.2
+  sign: 1
+  roll_kp: 0.4
   roll_rate_kd: 0.1
+  com_sign: 1
+  com_kp: 0.0
+  com_kd: 0.0
   max_offset: 0.12
-  max_vel: 1.2
-  tau: 0.1
+  max_vel: 1.3
+  tau: 0.09
   accel_task_enabled: false
-  accel_sign: -1
-  accel_roll_kp: 100
-  accel_roll_rate_kd: 0
-  accel_momentum_scale: -0.8
-  accel_max: 50
+  accel_sign: 1
+  accel_roll_kp: 5
+  accel_roll_rate_kd: 1
+  accel_momentum_scale: 0.0
+  accel_max: 3
 
 single_wheel_stance:
   enabled: false
   line_contact_wheel_control:
     enabled: true
+    sagittal_feedback_enabled: false
+    sagittal_feedback_sign: 1
+    sagittal_feedback_kp: 1.2
+    sagittal_feedback_kd: 0.1
+    sagittal_feedback_max_vel: 0.25
   pitch_control:
     enabled: false
     pitch_d_deg: 0.0
-    kp: 120
-    kd: 2
+    kp: 0.8
+    kd: 0.05
     accel_kp: 0
     accel_kd: 0
     sign: 1
-    max_lin_vel: 0.12
+    capture_kp: 1.5
+    capture_offset: 0.0
+    max_lin_vel: 0.4
     max_lin_acc: 0
+    wheel_velocity_pd_enabled: false
+    wheel_velocity_kd: 15
+    wheel_velocity_max_torque: 60
   com_feedback:
     enabled: true
     kp: 0.04
     kd: 0.01
     sign: -1.0
+    single_sign: 1.0
     max_offset: 0.06
+    transition_time: 0.8
   lateral_contact_kd: 10
   sagittal_contact_kd: 0
+  left_toe_lift_duration: 0.8
 
 line_contact_balance:
   com_xy_force_mask: 1.0
   moment_xy_mask: 1.0
+  moment_x_mask: 1.0
+  moment_y_mask: 1.0
   orientation_xy_mask: 1.0
   yaw_mask: 0.05
   roll_com_feedback_enabled: false
