@@ -81,6 +81,7 @@ public:
     Eigen::Vector3d right_foot_acceleration = Eigen::Vector3d::Zero();
     Eigen::Vector3d p_footplacement_target = Eigen::Vector3d::Zero();
     std::vector<Eigen::Vector3d> swing_preview;
+    ContactSchedule contact_window = ContactSchedule::Ones();
 
     stateMachineTypeDef StateMachine = DOUBLE_STANCE;
     stateMachineTypeDef prevStateMachine = DOUBLE_STANCE;

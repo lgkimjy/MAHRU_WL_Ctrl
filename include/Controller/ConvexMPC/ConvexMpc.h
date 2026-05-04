@@ -130,6 +130,12 @@ public:
         double com_height_d = 0.0;
         Eigen::Matrix<double, 3, kNumContacts> contact_pos_abs =
             Eigen::Matrix<double, 3, kNumContacts>::Zero();
+        Eigen::Matrix<double, 3, kNumContacts * kPlanHorizon> contact_pos_world_horizon =
+            Eigen::Matrix<double, 3, kNumContacts * kPlanHorizon>::Zero();
+        bool use_contact_pos_world_horizon = false;
+        Eigen::Matrix<double, kStateDim * kPlanHorizon, 1> state_ref_horizon =
+            Eigen::Matrix<double, kStateDim * kPlanHorizon, 1>::Zero();
+        bool use_state_ref_horizon = false;
         Eigen::Matrix<int, kNumContacts, kPlanHorizon> contact_schedule =
             Eigen::Matrix<int, kNumContacts, kPlanHorizon>::Ones();
     };
@@ -161,6 +167,7 @@ private:
 
     Eigen::Matrix<double, kStateDim, kStateDim> A_mat_c_;
     Eigen::Matrix<double, kStateDim, kForceDim> B_mat_c_;
+    Eigen::Matrix<double, kStateDim * kPlanHorizon, kStateDim> A_mat_d_list_;
     Eigen::Matrix<double, kStateDim * kPlanHorizon, kForceDim> B_mat_d_list_;
     Eigen::Matrix<double, kStateDim, kStateDim> A_mat_d_;
     Eigen::Matrix<double, kStateDim, kForceDim> B_mat_d_;

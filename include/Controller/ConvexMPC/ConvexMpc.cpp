@@ -147,6 +147,7 @@ void ConvexMpc::reset()
 {
     A_mat_c_.setZero();
     B_mat_c_.setZero();
+    A_mat_d_list_.setZero();
     B_mat_d_list_.setZero();
     A_mat_d_.setZero();
     B_mat_d_.setZero();
@@ -170,6 +171,9 @@ void ConvexMpc::reset()
 
 bool ConvexMpc::update(const Input& input, double dt)
 {
+    grf_.setZero();
+    predicted_states_.setZero();
+
     if (input.mass <= 0.0 || dt <= 0.0) {
         return false;
     }
@@ -186,19 +190,46 @@ bool ConvexMpc::update(const Input& input, double dt)
 
     Eigen::Matrix<double, kStateDim * kPlanHorizon, 1> mpc_states_d;
     for (int i = 0; i < kPlanHorizon; ++i) {
-        const double t = dt * static_cast<double>(i);
-        mpc_states_d.segment<kStateDim>(i * kStateDim) <<
-            input.euler_B_d,
-            input.p_CoM.x() + lin_vel_d_world.x() * t,
-            input.p_CoM.y() + lin_vel_d_world.y() * t,
-            input.com_height_d,
-            ang_vel_d_world,
-            lin_vel_d_world,
-            -9.8;
+        const double t = dt * static_cast<double>(i + 1);
+        Eigen::Vector3d euler_B_d = input.euler_B_d;
+        euler_B_d(2) += ang_vel_d_world.z() * dt * static_cast<double>(i);
 
-        calculateAMatC(mpc_states_d.segment<3>(i * kStateDim));
-        calculateBMatC(input.mass, input.trunk_inertia, input.R_B, input.contact_pos_abs);
+        Eigen::Vector3d p_CoM_d;
+        p_CoM_d << input.p_CoM.x() + lin_vel_d_world.x() * t,
+                   input.p_CoM.y() + lin_vel_d_world.y() * t,
+                   input.com_height_d;
+        Eigen::Vector3d omega_B_d = ang_vel_d_world;
+        Eigen::Vector3d pdot_CoM_d = lin_vel_d_world;
+        if (input.use_state_ref_horizon) {
+            const Eigen::Matrix<double, kStateDim, 1> state_ref =
+                input.state_ref_horizon.segment<kStateDim>(i * kStateDim);
+            euler_B_d = state_ref.segment<3>(0);
+            p_CoM_d = state_ref.segment<3>(3);
+            omega_B_d = state_ref.segment<3>(6);
+            pdot_CoM_d = state_ref.segment<3>(9);
+            mpc_states_d.segment<kStateDim>(i * kStateDim) = state_ref;
+        } else {
+            mpc_states_d.segment<kStateDim>(i * kStateDim) <<
+                euler_B_d,
+                p_CoM_d,
+                omega_B_d,
+                pdot_CoM_d,
+                -9.8;
+        }
+
+        calculateAMatC(euler_B_d);
+        Eigen::Matrix<double, 3, kNumContacts> contact_pos_rel =
+            input.contact_pos_abs;
+        if (input.use_contact_pos_world_horizon) {
+            for (int contact = 0; contact < kNumContacts; ++contact) {
+                contact_pos_rel.col(contact) =
+                    input.contact_pos_world_horizon.col(i * kNumContacts + contact)
+                    - p_CoM_d;
+            }
+        }
+        calculateBMatC(input.mass, input.trunk_inertia, input.R_B, contact_pos_rel);
         stateSpaceDiscretization(dt);
+        A_mat_d_list_.block<kStateDim, kStateDim>(i * kStateDim, 0) = A_mat_d_;
         B_mat_d_list_.block<kStateDim, kForceDim>(i * kStateDim, 0) = B_mat_d_;
     }
 
@@ -279,23 +310,25 @@ void ConvexMpc::calculateQPMats(const Input& input)
     A_qp_.setZero();
     B_qp_.setZero();
 
+    Eigen::Matrix<double, kStateDim, kStateDim> state_transition =
+        Eigen::Matrix<double, kStateDim, kStateDim>::Identity();
     for (int i = 0; i < kPlanHorizon; ++i) {
-        if (i == 0) {
-            A_qp_.block<kStateDim, kStateDim>(i * kStateDim, 0) = A_mat_d_;
-        } else {
-            A_qp_.block<kStateDim, kStateDim>(i * kStateDim, 0) =
-                A_qp_.block<kStateDim, kStateDim>((i - 1) * kStateDim, 0) * A_mat_d_;
-        }
+        const Eigen::Matrix<double, kStateDim, kStateDim> A_i =
+            A_mat_d_list_.block<kStateDim, kStateDim>(i * kStateDim, 0);
+        state_transition = A_i * state_transition;
+        A_qp_.block<kStateDim, kStateDim>(i * kStateDim, 0) = state_transition;
 
         for (int j = 0; j < i + 1; ++j) {
-            if (i - j == 0) {
-                B_qp_.block<kStateDim, kForceDim>(i * kStateDim, j * kForceDim) =
-                    B_mat_d_list_.block<kStateDim, kForceDim>(j * kStateDim, 0);
-            } else {
-                B_qp_.block<kStateDim, kForceDim>(i * kStateDim, j * kForceDim) =
-                    A_qp_.block<kStateDim, kStateDim>((i - j - 1) * kStateDim, 0)
-                    * B_mat_d_list_.block<kStateDim, kForceDim>(j * kStateDim, 0);
+            Eigen::Matrix<double, kStateDim, kStateDim> transition_after_input =
+                Eigen::Matrix<double, kStateDim, kStateDim>::Identity();
+            for (int k = j + 1; k <= i; ++k) {
+                transition_after_input =
+                    A_mat_d_list_.block<kStateDim, kStateDim>(k * kStateDim, 0)
+                    * transition_after_input;
             }
+            B_qp_.block<kStateDim, kForceDim>(i * kStateDim, j * kForceDim) =
+                transition_after_input
+                * B_mat_d_list_.block<kStateDim, kForceDim>(j * kStateDim, 0);
         }
     }
 

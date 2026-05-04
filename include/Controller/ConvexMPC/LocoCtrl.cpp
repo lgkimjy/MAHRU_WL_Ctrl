@@ -12,9 +12,9 @@ LocoCtrl::LocoCtrl() :
     run(12, Eigen::Vector4i(0, 0, 0, 0), Eigen::Vector4i(12, 12, 12, 12), "Run"),
     slide(20, Eigen::Vector4i(3, 3, 13, 13), Eigen::Vector4i(14, 14, 14, 14), "Sliding")
 {
-    optTraj.set_mid_air_height(0.10);
+    optTraj.set_mid_air_height(0.079);
     optTraj.set_costs(1e1, 1e1, 1e0, 1e-6);
-    previewTraj.set_mid_air_height(0.10);
+    previewTraj.set_mid_air_height(0.079);
     previewTraj.set_costs(1e1, 1e1, 1e0, 1e-6);
     reset(0);
 }
@@ -37,6 +37,7 @@ void LocoCtrl::reset(int gait_type)
     right_foot_acceleration.setZero();
     p_footplacement_target.setZero();
     swing_preview.clear();
+    contact_window.setOnes();
     lprevious_support_foot_position_.setZero();
     rprevious_support_foot_position_.setZero();
     resetMpc();
@@ -76,14 +77,15 @@ bool LocoCtrl::compute_contactSequence(int gaitType, ContactSchedule& schedule)
     gait->setIterations(iterationsBetweenMPC, iterationCounter);
     mpcTable = gait->mpc_gait();
 
-    const int gait_segments = gait->get_nMPC_segments();
-    for(int horizon = 0; horizon < ConvexMpc::kPlanHorizon; horizon++) {
-        const int segment = std::min(horizon, gait_segments - 1);
-        for(int foot = 0; foot < ConvexMpc::kNumContacts; foot++) {
-            schedule(foot, horizon) = mpcTable[segment * ConvexMpc::kNumContacts + foot];
+    for(int foot = 0; foot < ConvexMpc::kNumContacts; foot++) {
+        for(int horizon = 0; horizon < ConvexMpc::kPlanHorizon - 1; horizon++) {
+            contact_window(foot, horizon) = contact_window(foot, horizon + 1);
         }
+        contact_window(foot, ConvexMpc::kPlanHorizon - 1) = mpcTable[foot];
     }
+    schedule = contact_window;
 
+    const stateMachineTypeDef last_state_machine = StateMachine;
     if(schedule(1, 0) == 1 && schedule(3, 0) == 1) {
         StateMachine = DOUBLE_STANCE;
     } else if(schedule(1, 0) == 0 && schedule(3, 0) == 1) {
@@ -94,9 +96,9 @@ bool LocoCtrl::compute_contactSequence(int gaitType, ContactSchedule& schedule)
         StateMachine = DOUBLE_STANCE;
     }
 
-    if(StateMachine != prevStateMachine) {
+    if(StateMachine != last_state_machine) {
         cur_sw_time = 0.0;
-        prevStateMachine = StateMachine;
+        prevStateMachine = last_state_machine;
     }
     return gait_changed;
 }
@@ -195,7 +197,7 @@ void LocoCtrl::compute_nextfoot(
                             p_footplacement_target,
                             init_step_time, curr_step_time, step_duration);
         }
-        optTraj.get_next_state(curr_step_time + 0.001,
+        optTraj.get_next_state(curr_step_time + kControlDt,
                                right_foot_position, right_foot_velocity, right_foot_acceleration);
 
         left_foot_position = robot.fbk.p_C[3];
@@ -213,7 +215,7 @@ void LocoCtrl::compute_nextfoot(
                             p_footplacement_target,
                             init_step_time, curr_step_time, step_duration);
         }
-        optTraj.get_next_state(curr_step_time + 0.001,
+        optTraj.get_next_state(curr_step_time + kControlDt,
                                left_foot_position, left_foot_velocity, left_foot_acceleration);
 
         right_foot_position = robot.fbk.p_C[1];
@@ -251,6 +253,8 @@ bool LocoCtrl::compute_grf(const ConvexMpc::Input& input, double dt)
     const bool solved = mpc_solver.update(input, dt);
     if (solved) {
         grf_mpc = mpc_solver.groundReactionForce();
+    } else {
+        grf_mpc.setZero();
     }
     return solved;
 }

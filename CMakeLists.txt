@@ -31,6 +31,11 @@ set(MUJOCO_BUILD_EXAMPLES OFF CACHE BOOL "Build MuJoCo examples" FORCE)
 set(MUJOCO_BUILD_SIMULATE ON CACHE BOOL "Build MuJoCo simulate library" FORCE)
 set(MUJOCO_BUILD_TESTS OFF CACHE BOOL "Build MuJoCo tests" FORCE)
 add_subdirectory("${TEMPLATE_MUJOCO_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/mujoco")
+set(QPOASES_BUILD_EXAMPLES OFF CACHE BOOL "Build qpOASES examples" FORCE)
+set(QPOASES_AVOID_LA_NAMING_CONFLICTS OFF CACHE BOOL "" FORCE)
+add_subdirectory(
+  "${CMAKE_CURRENT_SOURCE_DIR}/include/3rd-parties/qpOASES"
+  "${CMAKE_BINARY_DIR}/qpOASES")
 
 find_package(Threads REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -119,6 +124,7 @@ add_executable(mahru_ctrl
 
 target_include_directories(mahru_ctrl PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  "${CMAKE_CURRENT_SOURCE_DIR}/include/3rd-parties/qpOASES/include"
   "${TEMPLATE_MUJOCO_SOURCE_DIR}/simulate"
   "${TEMPLATE_MUJOCO_SOURCE_DIR}/sample"
   ${HDF5_INCLUDE_DIRS}
@@ -129,6 +135,7 @@ target_link_libraries(mahru_ctrl PRIVATE
   OsqpEigen::OsqpEigen
   eigen-quadprog::eigen-quadprog
   yaml-cpp::yaml-cpp
+  qpOASES
   ${MUJOCO_SIMULATE_TARGET}
   mujoco::mujoco
   glfw

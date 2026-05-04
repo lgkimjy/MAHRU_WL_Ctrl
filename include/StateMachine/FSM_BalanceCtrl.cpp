@@ -10,7 +10,6 @@ namespace {
 
 constexpr double kControlDt = 0.001;
 constexpr double kMpcDt = 0.05;
-
 }  // namespace
 
 template <typename T>
@@ -115,6 +114,8 @@ void FSM_BalanceCtrlState<T>::computeConvexMPC()
         is_mpc_solved_ = loco_ctrl_.compute_grf(mpc_input, mpc_dt_);
         if (is_mpc_solved_) {
             grf_mpc_ = loco_ctrl_.groundReactionForce();
+        } else {
+            grf_mpc_.setZero();
         }
     }
 
@@ -151,6 +152,12 @@ void FSM_BalanceCtrlState<T>::computeWeightedWBC()
     wbc_input.R_B_d = R_B_wbc_d_;
     wbc_input.grfs_mpc = grf_mpc_;
     wbc_input.swing_contact_index = loco_ctrl_.swingContactIndex();
+    const auto sliding_state_machine =
+        (loco_ctrl_.StateMachine == LocoCtrl::LEFT_CONTACT
+         || loco_ctrl_.StateMachine == LocoCtrl::RIGHT_CONTACT)
+            ? loco_ctrl_.StateMachine
+            : loco_ctrl_.prevStateMachine;
+    wbc_input.previous_state_machine = static_cast<int>(sliding_state_machine);
 
     if (wbc_input.swing_contact_index >= 0) {
         wbc_input.p_sw_d = loco_ctrl_.swingPosition();
@@ -484,9 +491,9 @@ void FSM_BalanceCtrlState<T>::updateVisualization()
     viz_->sphere("BalanceCtrl/CoM", arbml_->p_CoM,
         0.035, {1.0f, 0.0f, 0.0f, 0.5f}
     );
-    // viz_->sphere("BalanceCtrl/CoM_d", p_CoM_wbc_d_,
-    //     0.025, {0.1f, 0.8f, 1.0f, 0.8f}
-    // );
+    viz_->sphere("BalanceCtrl/CoM_d", p_CoM_wbc_d_,
+        0.025, {0.1f, 0.8f, 1.0f, 0.8f}
+    );
 
     viz_->clearPrefix("BalanceCtrl/MPC_Horizon");
     if (is_mpc_solved_ && loco_ctrl_.predictedStates().allFinite()) {
